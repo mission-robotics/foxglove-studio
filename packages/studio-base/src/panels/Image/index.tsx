@@ -263,16 +263,20 @@ function ImageView(props: Props) {
 
   return (
     <Stack flex="auto" overflow="hidden" position="relative">
-      <PanelToolbar helpContent={helpContent}>
-        <Stack direction="row" flex="auto" alignItems="center" overflow="hidden">
-          <TopicDropdown
-            topics={imageTopics}
-            currentTopic={cameraTopic}
-            onChange={(value) => saveConfig({ cameraTopic: value })}
-          />
-        </Stack>
-      </PanelToolbar>
-      <PanelContextMenu itemsForClickPosition={contextMenuItemsForClickPosition} />
+      {config.showToolbar === true && (
+        <PanelToolbar helpContent={helpContent}>
+          <Stack direction="row" flex="auto" alignItems="center" overflow="hidden">
+            <TopicDropdown
+              topics={imageTopics}
+              currentTopic={cameraTopic}
+              onChange={(value) => saveConfig({ cameraTopic: value })}
+            />
+          </Stack>
+        </PanelToolbar>
+      )}
+      {config.hasContextMenu === true && (
+        <PanelContextMenu itemsForClickPosition={contextMenuItemsForClickPosition} />
+      )}
       <Stack fullWidth fullHeight>
         {/* Always render the ImageCanvas because it's expensive to unmount and start up. */}
         {imageMessageToRender && (
@@ -319,6 +323,8 @@ const defaultConfig: Config = {
   synchronize: false,
   transformMarkers: false,
   zoom: 1,
+  showToolbar: true,
+  hasContextMenu: true,
 };
 
 export default Panel(

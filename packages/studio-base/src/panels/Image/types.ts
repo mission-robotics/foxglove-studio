@@ -28,6 +28,8 @@ export type Config = DefaultConfig & {
   transformMarkers: boolean;
   zoom?: number;
   zoomPercentage?: number;
+  showToolbar?: boolean;
+  hasContextMenu?: boolean;
 };
 
 export type SaveImagePanelConfig = SaveConfig<Config>;
