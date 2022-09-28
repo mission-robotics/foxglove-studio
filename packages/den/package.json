@@ -11,5 +11,17 @@
     "name": "Foxglove Technologies",
     "email": "support@foxglove.dev"
   },
-  "homepage": "https://foxglove.dev/"
+  "scripts": {
+    "prepack": "tsc -b"
+  },
+  "main": "./dist/index.js",
+  "files": [
+    "./**/*.js",
+    "./**/*.d.ts",
+    "./**/*.ts.map"
+  ],
+  "homepage": "https://foxglove.dev/",
+  "devDependencies": {
+    "typescript": "4.8.2"
+  }
 }

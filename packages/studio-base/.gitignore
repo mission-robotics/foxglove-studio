@@ -1,2 +1,5 @@
 # Webpack build output
 /assets
+
+src/**/*.js
+src/**/*.d.ts
