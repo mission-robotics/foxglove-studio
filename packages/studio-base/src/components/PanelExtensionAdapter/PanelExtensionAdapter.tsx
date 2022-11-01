@@ -95,7 +95,7 @@ function PanelExtensionAdapter(props: PanelExtensionAdapterProps): JSX.Element {
 
   const { capabilities, profile: dataSourceProfile } = playerState;
 
-  const { openSiblingPanel } = usePanelContext();
+  const { openSiblingPanel, showToolbar } = usePanelContext();
 
   const [panelId, setPanelId] = useState(() => uuid());
 
@@ -484,7 +484,8 @@ function PanelExtensionAdapter(props: PanelExtensionAdapterProps): JSX.Element {
         ...style,
       }}
     >
-      <PanelToolbar helpContent={props.help} />
+      {showToolbar !== false && <PanelToolbar helpContent={props.help} />}
+
       <div style={{ flex: 1, overflow: "hidden" }} ref={panelContainerRef} />
     </div>
   );

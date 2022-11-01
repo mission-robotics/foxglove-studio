@@ -16,11 +16,11 @@
   "main": "src/index",
   "files": [
     "assets",
+    "src/assets/*.svg",
     "src/**/*.js",
     "src/**/*.d.ts",
     "src/**/*.md",
-    "src/**/*.ne",
-    "src/assets/*.svg"
+    "src/**/*.ne"
   ],
   "scripts": {
     "prepack": "yarn build:webpack && yarn build:tsc",

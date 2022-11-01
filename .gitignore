@@ -17,3 +17,5 @@ storybook-static/
 
 # Extensions
 *.foxe
+
+packages/**/*.tgz
