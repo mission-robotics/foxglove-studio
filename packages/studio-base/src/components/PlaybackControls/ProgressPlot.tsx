@@ -54,7 +54,7 @@ const useStyles = makeStyles()((theme) => ({
 
 export function ProgressPlot(props: ProgressProps): JSX.Element {
   const { availableRanges, loading } = props;
-  const { classes } = useStyles();
+  const { classes, cx } = useStyles();
 
   const ranges = useMemo(() => {
     if (!availableRanges) {
@@ -70,7 +70,7 @@ export function ProgressPlot(props: ProgressProps): JSX.Element {
 
       return (
         <div
-          className={classes.range}
+          className={`progress-plot-range ${cx(classes.range)}`}
           key={idx}
           style={{
             width: `${width * 100}%`,
@@ -79,7 +79,7 @@ export function ProgressPlot(props: ProgressProps): JSX.Element {
         />
       );
     });
-  }, [availableRanges, classes.range]);
+  }, [availableRanges, classes.range, cx]);
 
   return (
     <Stack position="relative" fullHeight>

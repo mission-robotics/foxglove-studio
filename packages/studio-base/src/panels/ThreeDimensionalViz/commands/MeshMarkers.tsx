@@ -134,7 +134,7 @@ function MeshMarkers({ markers, loadModelOptions, layerIndex }: MeshMarkerProps)
     );
   }
 
-  return <RemountOnValueChange value={modelCache}>{...models}</RemountOnValueChange>;
+  return <RemountOnValueChange value={modelCache}>{models.map((m) => m)}</RemountOnValueChange>;
 }
 
 export default MeshMarkers;

@@ -110,7 +110,12 @@ export default function Scrubber(props: Props): JSX.Element {
       if (val == undefined) {
         return undefined;
       }
-      return <div className={classes.marker} style={{ left: `${val * 100}%` }} />;
+      return (
+        <div
+          className={`progress-plot-marker ${classes.marker}`}
+          style={{ left: `${val * 100}%` }}
+        />
+      );
     },
     [classes.marker],
   );
@@ -179,7 +184,11 @@ export default function Scrubber(props: Props): JSX.Element {
         position="relative"
         style={{ height: 32 }}
       >
-        <div className={cx(classes.track, { [classes.trackDisabled]: !startTime })} />
+        <div
+          className={`progress-plot-track ${cx(classes.track, {
+            [classes.trackDisabled]: !startTime,
+          })}`}
+        />
         <Stack position="absolute" flex="auto" fullWidth style={{ height: 6 }}>
           <ProgressPlot loading={loading} availableRanges={ranges} />
         </Stack>

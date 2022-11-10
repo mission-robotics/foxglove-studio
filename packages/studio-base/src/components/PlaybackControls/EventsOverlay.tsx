@@ -62,12 +62,12 @@ function EventTick({ event }: { event: TimelinePositionedEvent }): JSX.Element {
 
   return (
     <div
-      className={cx(classes.tick, {
+      className={`event-tick ${cx(classes.tick, {
         [classes.tickHovered]: hoveredEvent
           ? event.event.id === hoveredEvent.event.id
           : eventsAtHoverValue[event.event.id] != undefined,
         [classes.tickSelected]: selectedEventId === event.event.id,
-      })}
+      })}`}
       style={{ left, right }}
     />
   );
