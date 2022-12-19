@@ -16,8 +16,9 @@ EOF
 corepack enable
 yarn install
 
-yarn workspace @foxglove/den add @foxglove/tsconfig/base
+yarn workspace @foxglove/den add @foxglove/tsconfig
 yarn workspace @foxglove/den install
+yarn workspace @foxglove/den pack
 # yarn workspace @foxglove/den npm publish
 
 # cd packages/den
