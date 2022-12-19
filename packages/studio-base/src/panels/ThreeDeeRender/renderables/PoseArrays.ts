@@ -5,6 +5,7 @@
 import * as THREE from "three";
 
 import { toNanoSec } from "@foxglove/rostime";
+import { PosesInFrame } from "@foxglove/schemas";
 import { SettingsTreeAction, SettingsTreeFields, Topic } from "@foxglove/studio";
 import type { RosValue } from "@foxglove/studio-base/players/types";
 
@@ -13,8 +14,9 @@ import { Renderer } from "../Renderer";
 import { PartialMessage, PartialMessageEvent, SceneExtension } from "../SceneExtension";
 import { SettingsTreeEntry } from "../SettingsManager";
 import { makeRgba, rgbaGradient, rgbaToCssString, stringToRgba } from "../color";
+import { POSES_IN_FRAME_DATATYPES } from "../foxglove";
 import { vecEqual } from "../math";
-import { normalizeHeader, normalizePose } from "../normalizeMessages";
+import { normalizeHeader, normalizePose, normalizeTime } from "../normalizeMessages";
 import {
   PoseArray,
   POSE_ARRAY_DATATYPES,
@@ -33,6 +35,7 @@ import {
   fieldSize,
   PRECISION_DISTANCE,
 } from "../settings";
+import { topicIsConvertibleToSchema } from "../topicIsConvertibleToSchema";
 import { makePose, Pose } from "../transforms";
 import { Axis, AXIS_LENGTH } from "./Axis";
 import { createArrowMarker } from "./Poses";
@@ -93,6 +96,7 @@ export type PoseArrayUserData = BaseUserData & {
   settings: LayerSettingsPoseArray;
   topic: string;
   poseArrayMessage: PoseArray;
+  originalMessage: Record<string, RosValue>;
   axes: Axis[];
   arrows: RenderableArrow[];
   lineStrip?: RenderableLineStrip;
@@ -107,7 +111,7 @@ export class PoseArrayRenderable extends Renderable<PoseArrayUserData> {
   }
 
   public override details(): Record<string, RosValue> {
-    return this.userData.poseArrayMessage;
+    return this.userData.originalMessage;
   }
 
   public removeArrows(): void {
@@ -139,8 +143,9 @@ export class PoseArrays extends SceneExtension<PoseArrayRenderable> {
   public constructor(renderer: Renderer) {
     super("foxglove.PoseArrays", renderer);
 
-    renderer.addDatatypeSubscriptions(POSE_ARRAY_DATATYPES, this.handlePoseArray);
-    renderer.addDatatypeSubscriptions(NAV_PATH_DATATYPES, this.handleNavPath);
+    renderer.addSchemaSubscriptions(POSE_ARRAY_DATATYPES, this.handlePoseArray);
+    renderer.addSchemaSubscriptions(POSES_IN_FRAME_DATATYPES, this.handlePosesInFrame);
+    renderer.addSchemaSubscriptions(NAV_PATH_DATATYPES, this.handleNavPath);
   }
 
   public override settingsNodes(): SettingsTreeEntry[] {
@@ -148,44 +153,51 @@ export class PoseArrays extends SceneExtension<PoseArrayRenderable> {
     const handler = this.handleSettingsAction;
     const entries: SettingsTreeEntry[] = [];
     for (const topic of this.renderer.topics ?? []) {
-      if (POSE_ARRAY_DATATYPES.has(topic.datatype) || NAV_PATH_DATATYPES.has(topic.datatype)) {
-        const config = (configTopics[topic.name] ?? {}) as Partial<LayerSettingsPoseArray>;
-        const displayType = config.type ?? getDefaultType(topic);
-        const { axisScale, lineWidth } = config;
-        const arrowScale = config.arrowScale ?? DEFAULT_ARROW_SCALE;
-        const gradient = config.gradient ?? DEFAULT_GRADIENT_STR;
-
-        const fields: SettingsTreeFields = {
-          type: { label: "Type", input: "select", options: TYPE_OPTIONS, value: displayType },
-        };
-        switch (displayType) {
-          case "axis":
-            fields["axisScale"] = fieldSize("Scale", axisScale, PRECISION_DISTANCE);
-            break;
-          case "arrow":
-            fields["arrowScale"] = fieldScaleVec3("Scale", arrowScale);
-            break;
-          case "line":
-            fields["lineWidth"] = fieldLineWidth("Line Width", lineWidth, DEFAULT_LINE_WIDTH);
-            break;
-        }
-
-        // Axis does not currently support gradients. This could possibly be done with tinting
-        if (displayType !== "axis") {
-          fields["gradient"] = fieldGradient("Gradient", gradient);
-        }
-
-        entries.push({
-          path: ["topics", topic.name],
-          node: {
-            label: topic.name,
-            icon: NAV_PATH_DATATYPES.has(topic.datatype) ? "Timeline" : "Flag",
-            fields,
-            visible: config.visible ?? DEFAULT_SETTINGS.visible,
-            handler,
-          },
-        });
+      if (
+        !(
+          topicIsConvertibleToSchema(topic, POSE_ARRAY_DATATYPES) ||
+          topicIsConvertibleToSchema(topic, NAV_PATH_DATATYPES) ||
+          topicIsConvertibleToSchema(topic, POSES_IN_FRAME_DATATYPES)
+        )
+      ) {
+        continue;
       }
+      const config = (configTopics[topic.name] ?? {}) as Partial<LayerSettingsPoseArray>;
+      const displayType = config.type ?? getDefaultType(topic);
+      const { axisScale, lineWidth } = config;
+      const arrowScale = config.arrowScale ?? DEFAULT_ARROW_SCALE;
+      const gradient = config.gradient ?? DEFAULT_GRADIENT_STR;
+
+      const fields: SettingsTreeFields = {
+        type: { label: "Type", input: "select", options: TYPE_OPTIONS, value: displayType },
+      };
+      switch (displayType) {
+        case "axis":
+          fields["axisScale"] = fieldSize("Scale", axisScale, PRECISION_DISTANCE);
+          break;
+        case "arrow":
+          fields["arrowScale"] = fieldScaleVec3("Scale", arrowScale);
+          break;
+        case "line":
+          fields["lineWidth"] = fieldLineWidth("Line Width", lineWidth, DEFAULT_LINE_WIDTH);
+          break;
+      }
+
+      // Axis does not currently support gradients. This could possibly be done with tinting
+      if (displayType !== "axis") {
+        fields["gradient"] = fieldGradient("Gradient", gradient);
+      }
+
+      entries.push({
+        path: ["topics", topic.name],
+        node: {
+          label: topic.name,
+          icon: topicIsConvertibleToSchema(topic, NAV_PATH_DATATYPES) ? "Timeline" : "Flag",
+          fields,
+          visible: config.visible ?? DEFAULT_SETTINGS.visible,
+          handler,
+        },
+      });
     }
     return entries;
   }
@@ -208,6 +220,7 @@ export class PoseArrays extends SceneExtension<PoseArrayRenderable> {
       this._updatePoseArrayRenderable(
         renderable,
         renderable.userData.poseArrayMessage,
+        renderable.userData.originalMessage,
         renderable.userData.receiveTime,
         { ...DEFAULT_SETTINGS, ...settings },
       );
@@ -217,7 +230,7 @@ export class PoseArrays extends SceneExtension<PoseArrayRenderable> {
   private handlePoseArray = (messageEvent: PartialMessageEvent<PoseArray>): void => {
     const poseArrayMessage = normalizePoseArray(messageEvent.message);
     const receiveTime = toNanoSec(messageEvent.receiveTime);
-    this.addPoseArray(messageEvent.topic, poseArrayMessage, receiveTime);
+    this.addPoseArray(messageEvent.topic, poseArrayMessage, messageEvent.message, receiveTime);
   };
 
   private handleNavPath = (messageEvent: PartialMessageEvent<NavPath>): void => {
@@ -227,10 +240,21 @@ export class PoseArrays extends SceneExtension<PoseArrayRenderable> {
 
     const poseArrayMessage = normalizeNavPathToPoseArray(messageEvent.message);
     const receiveTime = toNanoSec(messageEvent.receiveTime);
-    this.addPoseArray(messageEvent.topic, poseArrayMessage, receiveTime);
+    this.addPoseArray(messageEvent.topic, poseArrayMessage, messageEvent.message, receiveTime);
   };
 
-  private addPoseArray(topic: string, poseArrayMessage: PoseArray, receiveTime: bigint): void {
+  private handlePosesInFrame = (messageEvent: PartialMessageEvent<PosesInFrame>): void => {
+    const poseArrayMessage = normalizePosesInFrameToPoseArray(messageEvent.message);
+    const receiveTime = toNanoSec(messageEvent.receiveTime);
+    this.addPoseArray(messageEvent.topic, poseArrayMessage, messageEvent.message, receiveTime);
+  };
+
+  private addPoseArray(
+    topic: string,
+    poseArrayMessage: PoseArray,
+    originalMessage: Record<string, RosValue>,
+    receiveTime: bigint,
+  ): void {
     let renderable = this.renderables.get(topic);
     if (!renderable) {
       // Set the initial settings from default values merged with any user settings
@@ -249,6 +273,7 @@ export class PoseArrays extends SceneExtension<PoseArrayRenderable> {
         settings,
         topic,
         poseArrayMessage,
+        originalMessage,
         axes: [],
         arrows: [],
       });
@@ -260,6 +285,7 @@ export class PoseArrays extends SceneExtension<PoseArrayRenderable> {
     this._updatePoseArrayRenderable(
       renderable,
       poseArrayMessage,
+      originalMessage,
       receiveTime,
       renderable.userData.settings,
     );
@@ -338,6 +364,7 @@ export class PoseArrays extends SceneExtension<PoseArrayRenderable> {
   private _updatePoseArrayRenderable(
     renderable: PoseArrayRenderable,
     poseArrayMessage: PoseArray,
+    originalMessage: Record<string, RosValue>,
     receiveTime: bigint,
     settings: LayerSettingsPoseArray,
   ): void {
@@ -345,6 +372,7 @@ export class PoseArrays extends SceneExtension<PoseArrayRenderable> {
     renderable.userData.messageTime = toNanoSec(poseArrayMessage.header.stamp);
     renderable.userData.frameId = this.renderer.normalizeFrameId(poseArrayMessage.header.frame_id);
     renderable.userData.poseArrayMessage = poseArrayMessage;
+    renderable.userData.originalMessage = originalMessage;
 
     const { topic, settings: prevSettings } = renderable.userData;
     const axisOrArrowSettingsChanged =
@@ -428,7 +456,7 @@ export class PoseArrays extends SceneExtension<PoseArrayRenderable> {
 }
 
 function getDefaultType(topic: Topic | undefined): DisplayType {
-  return topic != undefined && NAV_PATH_DATATYPES.has(topic.datatype) ? "line" : DEFAULT_TYPE;
+  return topic != undefined && NAV_PATH_DATATYPES.has(topic.schemaName) ? "line" : DEFAULT_TYPE;
 }
 
 function setObjectPose(object: THREE.Object3D, pose: Pose): void {
@@ -482,6 +510,13 @@ function normalizeNavPathToPoseArray(navPath: PartialMessage<NavPath>): PoseArra
   return {
     header: normalizeHeader(navPath.header),
     poses: navPath.poses?.map((p) => normalizePose(p.pose)) ?? [],
+  };
+}
+
+function normalizePosesInFrameToPoseArray(poseArray: PartialMessage<PosesInFrame>): PoseArray {
+  return {
+    header: { stamp: normalizeTime(poseArray.timestamp), frame_id: poseArray.frame_id ?? "" },
+    poses: poseArray.poses?.map(normalizePose) ?? [],
   };
 }
 

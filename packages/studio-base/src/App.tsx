@@ -6,7 +6,9 @@ import { useState, Suspense, Fragment, useEffect } from "react";
 import { DndProvider } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
 
+import GlobalCss from "@foxglove/studio-base/components/GlobalCss";
 import EventsProvider from "@foxglove/studio-base/providers/EventsProvider";
+import { StudioLogsSettingsProvider } from "@foxglove/studio-base/providers/StudioLogsSettingsProvider";
 import TimelineInteractionStateProvider from "@foxglove/studio-base/providers/TimelineInteractionStateProvider";
 
 import Workspace from "./Workspace";
@@ -14,7 +16,6 @@ import { ColorSchemeThemeProvider } from "./components/ColorSchemeThemeProvider"
 import CssBaseline from "./components/CssBaseline";
 import DocumentTitleAdapter from "./components/DocumentTitleAdapter";
 import ErrorBoundary from "./components/ErrorBoundary";
-import GlobalCss from "./components/GlobalCss";
 import MultiProvider from "./components/MultiProvider";
 import PlayerManager from "./components/PlayerManager";
 import SendNotificationToastAdapter from "./components/SendNotificationToastAdapter";
@@ -54,8 +55,10 @@ type AppProps = {
   extensionLoaders: readonly ExtensionLoader[];
   nativeAppMenu?: INativeAppMenu;
   nativeWindow?: INativeWindow;
+  disableSignin?: boolean;
   enableDialogAuth?: boolean;
   enableLaunchPreferenceScreen?: boolean;
+  enableGlobalCss?: boolean;
 };
 
 // Suppress context menu for the entire app except on inputs & textareas.
@@ -76,12 +79,14 @@ export function App(props: AppProps): JSX.Element {
     dataSources,
     layoutStorage,
     consoleApi,
+    disableSignin,
     extensionLoaders,
     nativeAppMenu,
     nativeWindow,
     enableDialogAuth,
     deepLinks,
     enableLaunchPreferenceScreen,
+    enableGlobalCss = false,
   } = props;
 
   const CurrentUserProviderComponent =
@@ -91,6 +96,7 @@ export function App(props: AppProps): JSX.Element {
 
   const providers = [
     /* eslint-disable react/jsx-key */
+    <StudioLogsSettingsProvider />,
     <ConsoleApiContext.Provider value={consoleApi} />,
     <CurrentUserProviderComponent />,
     <ConsoleApiRemoteLayoutStorageProvider />,
@@ -130,7 +136,7 @@ export function App(props: AppProps): JSX.Element {
   return (
     <AppConfigurationContext.Provider value={appConfiguration}>
       <ColorSchemeThemeProvider>
-        <GlobalCss />
+        {enableGlobalCss && <GlobalCss />}
         <CssBaseline>
           <ErrorBoundary>
             <MaybeLaunchPreference>
@@ -140,7 +146,7 @@ export function App(props: AppProps): JSX.Element {
                 <DndProvider backend={HTML5Backend}>
                   <Suspense fallback={<></>}>
                     <PanelCatalogProvider>
-                      <Workspace deepLinks={deepLinks} />
+                      <Workspace deepLinks={deepLinks} disableSignin={disableSignin} />
                     </PanelCatalogProvider>
                   </Suspense>
                 </DndProvider>

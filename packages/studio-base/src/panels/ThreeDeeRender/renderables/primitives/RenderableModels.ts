@@ -5,12 +5,13 @@
 import * as THREE from "three";
 
 import { toNanoSec } from "@foxglove/rostime";
-import { ModelPrimitive, SceneEntity } from "@foxglove/schemas/schemas/typescript";
+import { ModelPrimitive, SceneEntity } from "@foxglove/schemas";
 import { emptyPose } from "@foxglove/studio-base/util/Pose";
 
 import { LoadedModel } from "../../ModelCache";
 import type { Renderer } from "../../Renderer";
 import { makeRgba, rgbToThreeColor, stringToRgba } from "../../color";
+import { disposeMeshesRecursive } from "../../dispose";
 import { LayerSettingsEntity } from "../SceneEntities";
 import { removeLights, replaceMaterials } from "../models";
 import { RenderablePrimitive } from "./RenderablePrimitive";
@@ -38,7 +39,7 @@ export class RenderableModels extends RenderablePrimitive {
       messageTime: -1n,
       frameId: "",
       pose: emptyPose(),
-      settings: { visible: true, color: undefined },
+      settings: { visible: true, color: undefined, selectedIdVariable: undefined },
       settingsPath: [],
       entity: undefined,
     });
@@ -134,13 +135,12 @@ export class RenderableModels extends RenderablePrimitive {
   }
 
   public override update(
+    topic: string | undefined,
     entity: SceneEntity | undefined,
     settings: LayerSettingsEntity,
     receiveTime: bigint,
   ): void {
-    this.userData.entity = entity;
-    this.userData.settings = settings;
-    this.userData.receiveTime = receiveTime;
+    super.update(topic, entity, settings, receiveTime);
     if (entity) {
       const lifetimeNs = toNanoSec(entity.lifetime);
       this.userData.expiresAt = lifetimeNs === 0n ? undefined : receiveTime + lifetimeNs;
@@ -149,7 +149,7 @@ export class RenderableModels extends RenderablePrimitive {
   }
 
   public updateSettings(settings: LayerSettingsEntity): void {
-    this.update(this.userData.entity, settings, this.userData.receiveTime);
+    this.update(this.userData.topic, this.userData.entity, settings, this.userData.receiveTime);
   }
 
   private async _loadCachedModel(
@@ -229,8 +229,8 @@ export class RenderableModels extends RenderablePrimitive {
 
   private _disposeModel(renderable: RenderableModel) {
     renderable.material?.dispose();
-    disposeModel(renderable.model);
-    disposeModel(renderable.cachedModel);
+    disposeMeshesRecursive(renderable.model);
+    disposeMeshesRecursive(renderable.cachedModel);
   }
 }
 
@@ -238,26 +238,4 @@ function cloneAndPrepareModel(cachedModel: LoadedModel) {
   const model = cachedModel.clone(true);
   removeLights(model);
   return new THREE.Group().add(model);
-}
-
-function disposeModel(object: THREE.Object3D) {
-  object.traverse((child) => {
-    if (child instanceof THREE.Mesh) {
-      child.geometry.dispose();
-      if (child.material instanceof THREE.MeshStandardMaterial) {
-        child.material.map?.dispose();
-        child.material.lightMap?.dispose();
-        child.material.aoMap?.dispose();
-        child.material.emissiveMap?.dispose();
-        child.material.bumpMap?.dispose();
-        child.material.normalMap?.dispose();
-        child.material.displacementMap?.dispose();
-        child.material.roughnessMap?.dispose();
-        child.material.metalnessMap?.dispose();
-        child.material.alphaMap?.dispose();
-        child.material.envMap?.dispose();
-      }
-      child.material.dispose();
-    }
-  });
 }

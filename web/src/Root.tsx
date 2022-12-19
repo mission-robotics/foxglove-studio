@@ -9,7 +9,7 @@ import {
   Ros1LocalBagDataSourceFactory,
   Ros2LocalBagDataSourceFactory,
   RosbridgeDataSourceFactory,
-  Ros1RemoteBagDataSourceFactory,
+  RemoteDataSourceFactory,
   FoxgloveDataPlatformDataSourceFactory,
   FoxgloveWebSocketDataSourceFactory,
   UlogLocalDataSourceFactory,
@@ -17,7 +17,6 @@ import {
   SampleNuscenesDataSourceFactory,
   IAppConfiguration,
   IdbExtensionLoader,
-  McapRemoteDataSourceFactory,
   App,
   ConsoleApi,
 } from "@foxglove/studio-base";
@@ -32,7 +31,6 @@ export function Root({ appConfiguration }: { appConfiguration: IAppConfiguration
     const sources = [
       new Ros1UnavailableDataSourceFactory(),
       new Ros1LocalBagDataSourceFactory(),
-      new Ros1RemoteBagDataSourceFactory(),
       new Ros2UnavailableDataSourceFactory(),
       new Ros2LocalBagDataSourceFactory(),
       new RosbridgeDataSourceFactory(),
@@ -42,7 +40,7 @@ export function Root({ appConfiguration }: { appConfiguration: IAppConfiguration
       new FoxgloveDataPlatformDataSourceFactory(),
       new SampleNuscenesDataSourceFactory(),
       new McapLocalDataSourceFactory(),
-      new McapRemoteDataSourceFactory(),
+      new RemoteDataSourceFactory(),
     ];
 
     return sources;
@@ -60,16 +58,22 @@ export function Root({ appConfiguration }: { appConfiguration: IAppConfiguration
   const enableDialogAuth =
     process.env.NODE_ENV === "development" || process.env.FOXGLOVE_ENABLE_DIALOG_AUTH != undefined;
 
+  const disableSignin = process.env.FOXGLOVE_DISABLE_SIGN_IN != undefined;
+
   return (
-    <App
-      enableDialogAuth={enableDialogAuth}
-      enableLaunchPreferenceScreen
-      deepLinks={[window.location.href]}
-      dataSources={dataSources}
-      appConfiguration={appConfiguration}
-      layoutStorage={layoutStorage}
-      consoleApi={consoleApi}
-      extensionLoaders={extensionLoaders}
-    />
+    <>
+      <App
+        disableSignin={disableSignin}
+        enableDialogAuth={enableDialogAuth}
+        enableLaunchPreferenceScreen
+        deepLinks={[window.location.href]}
+        dataSources={dataSources}
+        appConfiguration={appConfiguration}
+        layoutStorage={layoutStorage}
+        consoleApi={consoleApi}
+        extensionLoaders={extensionLoaders}
+        enableGlobalCss
+      />
+    </>
   );
 }

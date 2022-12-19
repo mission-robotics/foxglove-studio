@@ -16,6 +16,7 @@ import {
   fromMillis,
   fromNanoSec,
   toString,
+  toRFC3339String,
 } from "@foxglove/rostime";
 import { MessageEvent, ParameterValue } from "@foxglove/studio";
 import NoopMetricsCollector from "@foxglove/studio-base/players/NoopMetricsCollector";
@@ -35,7 +36,6 @@ import {
 } from "@foxglove/studio-base/players/types";
 import { RosDatatypes } from "@foxglove/studio-base/types/RosDatatypes";
 import delay from "@foxglove/studio-base/util/delay";
-import { SEEK_ON_START_NS } from "@foxglove/studio-base/util/time";
 
 import { BlockLoader } from "./BlockLoader";
 import { BufferedIterableSource } from "./BufferedIterableSource";
@@ -60,6 +60,10 @@ const MIN_MEM_CACHE_BLOCK_SIZE_NS = 0.1e9;
 // Adaptive block sizing is simpler than using a tree structure for immutable updates but
 // less flexible, so we may want to move away from a single-level block structure in the future.
 const MAX_BLOCKS = 400;
+
+// Amount to seek into the data source from the start when loading the player. The purpose of this
+// is to provide some initial data to subscribers.
+const SEEK_ON_START_NS = BigInt(99 * 1e6);
 
 type IterablePlayerOptions = {
   metricsCollector?: PlayerMetricsCollectorInterface;
@@ -138,7 +142,8 @@ export class IterablePlayer implements Player {
   private _receivedBytes: number = 0;
   private _hasError = false;
   private _lastRangeMillis?: number;
-  private _lastMessage?: MessageEvent<unknown>;
+  private _lastMessageEvent?: MessageEvent<unknown>;
+  private _lastStamp?: Time;
   private _publishedTopics = new Map<string, Set<string>>();
   private _seekTarget?: Time;
   private _presence = PlayerPresence.INITIALIZING;
@@ -450,7 +455,8 @@ export class IterablePlayer implements Player {
         if (existingTopic) {
           problems.push({
             severity: "warn",
-            message: `Duplicate topic: ${topic.name}`,
+            message: `Inconsistent datatype for topic: ${topic.name}`,
+            tip: `Topic ${topic.name} has messages with multiple datatypes: ${existingTopic.schemaName}, ${topic.schemaName}. This may result in errors during visualization.`,
           });
           continue;
         }
@@ -468,19 +474,33 @@ export class IterablePlayer implements Player {
       }
 
       if (this._enablePreload) {
-        // --- setup blocks
-        this._blockLoader = new BlockLoader({
-          cacheSizeBytes: DEFAULT_CACHE_SIZE_BYTES,
-          source: this._iterableSource,
-          start: this._start,
-          end: this._end,
-          maxBlocks: MAX_BLOCKS,
-          minBlockDurationNs: MIN_MEM_CACHE_BLOCK_SIZE_NS,
-          problemManager: this._problemManager,
-        });
+        // --- setup block loader which loads messages for _full_ subscriptions in the "background"
+        try {
+          this._blockLoader = new BlockLoader({
+            cacheSizeBytes: DEFAULT_CACHE_SIZE_BYTES,
+            source: this._iterableSource,
+            start: this._start,
+            end: this._end,
+            maxBlocks: MAX_BLOCKS,
+            minBlockDurationNs: MIN_MEM_CACHE_BLOCK_SIZE_NS,
+            problemManager: this._problemManager,
+          });
+        } catch (err) {
+          log.error(err);
+
+          const startStr = toRFC3339String(this._start);
+          const endStr = toRFC3339String(this._end);
+
+          this._problemManager.addProblem("block-loader", {
+            severity: "warn",
+            message: "Failed to initialize message preloading",
+            tip: `The start (${startStr}) and end (${endStr}) of your data is too far apart.`,
+            error: err,
+          });
+        }
       }
 
-      // set the initial topics for the loader
+      this._presence = PlayerPresence.PRESENT;
     } catch (error) {
       this._setError(`Error initializing: ${error.message}`, error);
     }
@@ -516,6 +536,7 @@ export class IterablePlayer implements Player {
     this._playbackIterator = this._bufferedSource.messageIterator({
       topics: Array.from(this._allTopics),
       start: next,
+      consumptionType: "partial",
     });
   }
 
@@ -548,9 +569,10 @@ export class IterablePlayer implements Player {
     this._playbackIterator = this._bufferedSource.messageIterator({
       topics: Array.from(this._allTopics),
       start: this._start,
+      consumptionType: "partial",
     });
 
-    this._lastMessage = undefined;
+    this._lastMessageEvent = undefined;
     this._messages = [];
 
     const messageEvents: MessageEvent<unknown>[] = [];
@@ -575,17 +597,25 @@ export class IterablePlayer implements Player {
           return;
         }
 
-        if (iterResult.problem) {
+        if (iterResult.type === "problem") {
           this._problemManager.addProblem(`connid-${iterResult.connectionId}`, iterResult.problem);
           continue;
         }
 
-        if (compare(iterResult.msgEvent.receiveTime, stopTime) > 0) {
-          this._lastMessage = iterResult.msgEvent;
+        if (iterResult.type === "stamp" && compare(iterResult.stamp, stopTime) >= 0) {
+          this._lastStamp = iterResult.stamp;
           break;
         }
 
-        messageEvents.push(iterResult.msgEvent);
+        if (iterResult.type === "message-event") {
+          // The message is past the tick end time, we need to save it for next tick
+          if (compare(iterResult.msgEvent.receiveTime, stopTime) > 0) {
+            this._lastMessageEvent = iterResult.msgEvent;
+            break;
+          }
+
+          messageEvents.push(iterResult.msgEvent);
+        }
       }
     } finally {
       clearTimeout(tickTimeout);
@@ -606,7 +636,7 @@ export class IterablePlayer implements Player {
       return;
     }
 
-    this._lastMessage = undefined;
+    this._lastMessageEvent = undefined;
 
     // If the backfill does not complete within 100 milliseconds, we emit a seek event with no messages.
     // This provides feedback to the user that we've acknowledged their seek request but haven't loaded the data.
@@ -755,13 +785,38 @@ export class IterablePlayer implements Player {
     const targetTime = add(this._currentTime, fromMillis(rangeMillis));
     const end: Time = clampTime(targetTime, this._start, this._untilTime ?? this._end);
 
+    // If a lastStamp is available from the previous tick we check the stamp against our current
+    // tick's end time. If this stamp is after our current tick's end time then we don't need to
+    // read any messages and can shortcut the rest of the logic to set the current time to the tick
+    // end time and queue an emit.
+    //
+    // If we have a lastStamp but it isn't after the tick end, then we clear it and proceed with the
+    // tick logic.
+    if (this._lastStamp) {
+      if (compare(this._lastStamp, end) >= 0) {
+        // Wait for the previous render frame to finish
+        await this._queueEmitState.currentPromise;
+
+        this._currentTime = end;
+        this._messages = [];
+        this._queueEmitState();
+
+        if (this._untilTime && compare(this._currentTime, this._untilTime) >= 0) {
+          this.pausePlayback();
+        }
+        return;
+      }
+
+      this._lastStamp = undefined;
+    }
+
     const msgEvents: MessageEvent<unknown>[] = [];
 
     // When ending the previous tick, we might have already read a message from the iterator which
     // belongs to our tick. This logic brings that message into our current batch of message events.
-    if (this._lastMessage) {
+    if (this._lastMessageEvent) {
       // If the last message we saw is still ahead of the tick end time, we don't emit anything
-      if (compare(this._lastMessage.receiveTime, end) > 0) {
+      if (compare(this._lastMessageEvent.receiveTime, end) > 0) {
         // Wait for the previous render frame to finish
         await this._queueEmitState.currentPromise;
 
@@ -775,8 +830,8 @@ export class IterablePlayer implements Player {
         return;
       }
 
-      msgEvents.push(this._lastMessage);
-      this._lastMessage = undefined;
+      msgEvents.push(this._lastMessageEvent);
+      this._lastMessageEvent = undefined;
     }
 
     // If we take too long to read the tick data, we set the player into a BUFFERING presence. This
@@ -799,21 +854,26 @@ export class IterablePlayer implements Player {
           break;
         }
         const iterResult = result.value;
-        if (iterResult.problem) {
-          this._problemManager.addProblem(`connid-${iterResult.connectionId}`, iterResult.problem);
-        }
 
-        if (iterResult.problem) {
+        if (iterResult.type === "problem") {
+          this._problemManager.addProblem(`connid-${iterResult.connectionId}`, iterResult.problem);
           continue;
         }
 
-        // The message is past the tick end time, we need to save it for next tick
-        if (compare(iterResult.msgEvent.receiveTime, end) > 0) {
-          this._lastMessage = iterResult.msgEvent;
+        if (iterResult.type === "stamp" && compare(iterResult.stamp, end) >= 0) {
+          this._lastStamp = iterResult.stamp;
           break;
         }
 
-        msgEvents.push(iterResult.msgEvent);
+        if (iterResult.type === "message-event") {
+          // The message is past the tick end time, we need to save it for next tick
+          if (compare(iterResult.msgEvent.receiveTime, end) > 0) {
+            this._lastMessageEvent = iterResult.msgEvent;
+            break;
+          }
+
+          msgEvents.push(iterResult.msgEvent);
+        }
       }
     } finally {
       clearTimeout(tickTimeout);
@@ -903,7 +963,7 @@ export class IterablePlayer implements Player {
         // If subscriptions changed, update to the new subscriptions
         if (this._allTopics !== allTopics) {
           // Discard any last message event since the new iterator will repeat it
-          this._lastMessage = undefined;
+          this._lastMessageEvent = undefined;
 
           // Bail playback and reset the playback iterator when topics have changed so we can load
           // the new topics
@@ -935,8 +995,10 @@ export class IterablePlayer implements Player {
     await this._blockLoader?.stopLoading();
     await this._blockLoadingProcess;
     await this._bufferedSource.stopProducer();
+    await this._bufferedSource.terminate();
     await this._playbackIterator?.return?.();
     this._playbackIterator = undefined;
+    await this._iterableSource.terminate?.();
   }
 
   private async startBlockLoading() {

@@ -4,7 +4,6 @@
 
 import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
 import ErrorIcon from "@mui/icons-material/Error";
-import LinkIcon from "@mui/icons-material/Link";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import {
   Divider,
@@ -26,10 +25,11 @@ import { makeStyles } from "tss-react/mui";
 import CopyButton from "@foxglove/studio-base/components/CopyButton";
 import JsonInput from "@foxglove/studio-base/components/JsonInput";
 import Stack from "@foxglove/studio-base/components/Stack";
+import { useAnalytics } from "@foxglove/studio-base/context/AnalyticsContext";
 import useGlobalVariables, {
   GlobalVariables,
 } from "@foxglove/studio-base/hooks/useGlobalVariables";
-import useLinkedGlobalVariables from "@foxglove/studio-base/panels/ThreeDimensionalViz/Interactions/useLinkedGlobalVariables";
+import { AppEvent } from "@foxglove/studio-base/services/IAnalytics";
 
 const useStyles = makeStyles<void, "copyButton">()((theme, _params, classes) => ({
   root: {
@@ -99,10 +99,9 @@ const changeGlobalKey = (
 export default function Variable(props: {
   name: string;
   selected?: ListItemButtonProps["selected"];
-  linked?: boolean;
-  linkedIndex: number;
+  index: number;
 }): JSX.Element {
-  const { name, selected = false, linked = false, linkedIndex } = props;
+  const { name, selected = false, index } = props;
 
   const { classes } = useStyles();
 
@@ -118,7 +117,6 @@ export default function Variable(props: {
   const menuOpen = Boolean(anchorEl);
 
   const { globalVariables, setGlobalVariables, overwriteGlobalVariables } = useGlobalVariables();
-  const { linkedGlobalVariables, setLinkedGlobalVariables } = useLinkedGlobalVariables();
 
   const handleClick = (event: React.MouseEvent<HTMLButtonElement>) => {
     setAnchorEl(event.currentTarget);
@@ -127,35 +125,13 @@ export default function Variable(props: {
     setAnchorEl(undefined);
   };
 
-  const linkedTopicPaths = useMemo(
-    () =>
-      linkedGlobalVariables
-        .filter((variable) => variable.name === name)
-        .map(({ topic, markerKeyPath }) => [topic, ...markerKeyPath].join(".")),
-    [linkedGlobalVariables, name],
-  );
+  const analytics = useAnalytics();
 
-  const unlink = useCallback(
-    (path: string) => {
-      setLinkedGlobalVariables(
-        linkedGlobalVariables.filter(
-          ({ name: varName, topic, markerKeyPath }) =>
-            !(varName === name && [topic, ...markerKeyPath].join(".") === path),
-        ),
-      );
-      handleClose();
-    },
-    [linkedGlobalVariables, name, setLinkedGlobalVariables],
-  );
-
-  const unlinkAndDelete = useCallback(() => {
-    const newLinkedGlobalVariables = linkedGlobalVariables.filter(
-      ({ name: varName }) => varName !== name,
-    );
-    setLinkedGlobalVariables(newLinkedGlobalVariables);
+  const deleteVariable = useCallback(() => {
     setGlobalVariables({ [name]: undefined });
+    void analytics.logEvent(AppEvent.VARIABLE_DELETE);
     handleClose();
-  }, [linkedGlobalVariables, name, setGlobalVariables, setLinkedGlobalVariables]);
+  }, [analytics, name, setGlobalVariables]);
 
   const value = useMemo(() => globalVariables[name], [globalVariables, name]);
 
@@ -173,7 +149,7 @@ export default function Variable(props: {
       globalVariables[editedName] == undefined &&
       name !== editedName
     ) {
-      changeGlobalKey(editedName, name, globalVariables, linkedIndex, overwriteGlobalVariables);
+      changeGlobalKey(editedName, name, globalVariables, index, overwriteGlobalVariables);
     }
     setEditedName(undefined);
   };
@@ -186,6 +162,8 @@ export default function Variable(props: {
   const isDuplicate =
     editedName != undefined && editedName !== name && globalVariables[editedName] != undefined;
 
+  const getText = useCallback(() => JSON.stringify(value, undefined, 2) ?? "", [value]);
+
   return (
     <Stack className={classes.root} ref={rootRef}>
       <ListItem
@@ -193,29 +171,6 @@ export default function Variable(props: {
         disablePadding
         secondaryAction={
           <Stack className={classes.edgeEnd} direction="row" alignItems="center" gap={0.25}>
-            {linkedTopicPaths.length > 0 && (
-              <Tooltip
-                arrow
-                placement="top"
-                title={
-                  linkedTopicPaths.length > 0 && (
-                    <Stack padding={0.25} gap={0.25}>
-                      <Typography variant="overline" style={{ opacity: 0.8 }}>
-                        {linkedTopicPaths.length} LINKED TOPIC
-                        {linkedTopicPaths.length > 1 ? "S" : ""}
-                      </Typography>
-                      {linkedTopicPaths.map((path) => (
-                        <Typography key={path} variant="inherit">
-                          {path}
-                        </Typography>
-                      ))}
-                    </Stack>
-                  )
-                }
-              >
-                <LinkIcon color={isSelected ? "primary" : "info"} style={{ opacity: 0.8 }} />
-              </Tooltip>
-            )}
             <IconButton
               size="small"
               id="variable-action-button"
@@ -237,21 +192,7 @@ export default function Variable(props: {
                 dense: true,
               }}
             >
-              {linkedTopicPaths.map((path) => (
-                <MenuItem data-test="unlink-path" key={path} onClick={() => unlink(path)}>
-                  Unlink&nbsp;
-                  <Typography
-                    fontWeight={600}
-                    variant="inherit"
-                    component="span"
-                    color="text.secondary"
-                  >
-                    {path}
-                  </Typography>
-                </MenuItem>
-              ))}
-              {linkedTopicPaths.length > 0 && <Divider variant="middle" />}
-              <MenuItem onClick={unlinkAndDelete}>
+              <MenuItem onClick={deleteVariable}>
                 <Typography color="error.main" variant="inherit">
                   Delete variable
                 </Typography>
@@ -271,34 +212,28 @@ export default function Variable(props: {
                 <ArrowDropDownIcon
                   style={{ transform: !expanded ? "rotate(-90deg)" : undefined }}
                 />
-                {linked ? (
-                  name
-                ) : (
-                  <>
-                    <InputBase
-                      className={classes.input}
-                      autoFocus={name === ""}
-                      error={isDuplicate}
-                      value={editedName ?? name}
-                      placeholder="variable_name"
-                      data-testid={`global-variable-key-input-${name}`}
-                      onClick={(e) => e.stopPropagation()}
-                      onFocus={() => editedName === "" && setExpanded(true)}
-                      onChange={(event) => setEditedName(event.target.value)}
-                      onBlur={onBlur}
-                      endAdornment={
-                        isDuplicate && (
-                          <Tooltip
-                            arrow
-                            title="A variable with this name already exists. Please select a unique variable name to save changes."
-                          >
-                            <ErrorIcon className={classes.edgeEnd} fontSize="small" color="error" />
-                          </Tooltip>
-                        )
-                      }
-                    />
-                  </>
-                )}
+                <InputBase
+                  className={classes.input}
+                  autoFocus={name === ""}
+                  error={isDuplicate}
+                  value={editedName ?? name}
+                  placeholder="variable_name"
+                  data-testid={`global-variable-key-input-${name}`}
+                  onClick={(e) => e.stopPropagation()}
+                  onFocus={() => editedName === "" && setExpanded(true)}
+                  onChange={(event) => setEditedName(event.target.value)}
+                  onBlur={onBlur}
+                  endAdornment={
+                    isDuplicate && (
+                      <Tooltip
+                        arrow
+                        title="A variable with this name already exists. Please select a unique variable name to save changes."
+                      >
+                        <ErrorIcon className={classes.edgeEnd} fontSize="small" color="error" />
+                      </Tooltip>
+                    )
+                  }
+                />
               </Stack>
             }
             primaryTypographyProps={{
@@ -316,11 +251,11 @@ export default function Variable(props: {
             className={classes.copyButton}
             size="small"
             color={copied ? "primary" : "inherit"}
-            value={JSON.stringify(value, undefined, 2) ?? ""}
+            getText={getText}
           >
             {copied ? "Copied" : "Copy"}
           </CopyButton>
-          <JsonInput value={value} readOnly={linked} onChange={onChangeValue} />
+          <JsonInput value={value} onChange={onChangeValue} />
         </div>
       )}
       <Divider />

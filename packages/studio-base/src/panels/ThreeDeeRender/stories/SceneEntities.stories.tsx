@@ -7,9 +7,11 @@ import { STLExporter } from "three/examples/jsm/exporters/STLExporter";
 import { TeapotGeometry } from "three/examples/jsm/geometries/TeapotGeometry";
 import tinycolor from "tinycolor2";
 
-import { FrameTransform, LineType, SceneUpdate } from "@foxglove/schemas/schemas/typescript";
-import { MessageEvent, Topic } from "@foxglove/studio";
+import { FrameTransform, LineType, SceneUpdate } from "@foxglove/schemas";
+import { MessageEvent } from "@foxglove/studio";
+import { ColorRGBA } from "@foxglove/studio-base/panels/ThreeDeeRender/ros";
 import { xyzrpyToPose } from "@foxglove/studio-base/panels/ThreeDeeRender/transforms";
+import { Topic } from "@foxglove/studio-base/players/types";
 import PanelSetup from "@foxglove/studio-base/stories/PanelSetup";
 
 import ThreeDeeRender from "../index";
@@ -20,6 +22,27 @@ export default {
   component: ThreeDeeRender,
 };
 
+const icospherePointsAndIndices = {
+  points: [
+    { x: 0, y: 0.15771933363574006, z: 0.255195242505612 },
+    { x: 0, y: -0.15771933363574006, z: 0.255195242505612 },
+    { x: 0.15771933363574006, y: 0.255195242505612, z: 0 },
+    { x: -0.15771933363574006, y: 0.255195242505612, z: 0 },
+    { x: 0.255195242505612, y: 0, z: 0.15771933363574006 },
+    { x: -0.255195242505612, y: 0, z: 0.15771933363574006 },
+    { x: 0, y: -0.15771933363574006, z: -0.255195242505612 },
+    { x: 0, y: 0.15771933363574006, z: -0.255195242505612 },
+    { x: -0.15771933363574006, y: -0.255195242505612, z: 0 },
+    { x: 0.15771933363574006, y: -0.255195242505612, z: 0 },
+    { x: -0.255195242505612, y: 0, z: -0.15771933363574006 },
+    { x: 0.255195242505612, y: 0, z: -0.15771933363574006 },
+  ],
+  indices: [
+    0, 5, 1, 0, 3, 5, 0, 2, 3, 0, 4, 2, 0, 1, 4, 1, 5, 8, 5, 3, 10, 3, 2, 7, 2, 4, 11, 4, 1, 9, 7,
+    11, 6, 11, 9, 6, 9, 8, 6, 8, 10, 6, 10, 7, 6, 2, 11, 7, 4, 9, 11, 1, 8, 9, 5, 10, 8, 3, 7, 10,
+  ],
+};
+
 function makeStoryScene({
   topic,
   frameId,
@@ -28,8 +51,6 @@ function makeStoryScene({
   frameId: string;
 }): MessageEvent<SceneUpdate> {
   const teapotMesh = new THREE.Mesh(new TeapotGeometry(1));
-  teapotMesh.rotateX(Math.PI / 2);
-  teapotMesh.updateMatrixWorld();
   const teapotSTL = new STLExporter().parse(teapotMesh);
 
   /** Reorder points for testing `indices` */
@@ -115,90 +136,125 @@ function makeStoryScene({
             },
           ],
 
-          lines: [
-            0 as LineType.LINE_STRIP,
-            1 as LineType.LINE_LOOP,
-            2 as LineType.LINE_LIST,
-          ].flatMap((type, typeIndex) => [
-            {
-              // non-indexed, single color
-              type,
-              pose: xyzrpyToPose([0, 0.8 + typeIndex * 0.2, 0], [0, 0, 0]),
-              thickness: 0.05,
-              scale_invariant: false,
-              points: new Array(10).fill(0).map((_, i, { length }) => ({
-                x: (0.8 * i) / (length - 1),
-                y: 0.25 * Math.sin((2 * Math.PI * i) / (length - 1)),
-                z: 0,
-              })),
-              color: makeColor("#7995fb", 0.8),
-              colors: [],
-              indices: [],
-            },
-            {
-              // indexed, single color
-              type,
-              pose: xyzrpyToPose([0, 1.8 + typeIndex * 0.2, 0], [0, 0, 0]),
-              thickness: 0.05,
-              scale_invariant: false,
-              points: rearrange(
-                new Array(10).fill(0).map((_, i, { length }) => ({
+          lines: [LineType.LINE_STRIP, LineType.LINE_LOOP, LineType.LINE_LIST].flatMap(
+            (type, typeIndex) => [
+              {
+                // non-indexed, single color
+                type,
+                pose: xyzrpyToPose([0, 0.8 + typeIndex * 0.2, 0], [0, 0, 0]),
+                thickness: 0.05,
+                scale_invariant: false,
+                points: new Array(10).fill(0).map((_, i, { length }) => ({
                   x: (0.8 * i) / (length - 1),
                   y: 0.25 * Math.sin((2 * Math.PI * i) / (length - 1)),
                   z: 0,
                 })),
-              ),
-              color: makeColor("#7995fb", 0.8),
-              colors: [],
-              indices: rearrange(new Array(10).fill(0).map((_, i) => i)),
-            },
-            {
-              // non-indexed, vertex colors
-              type,
-              pose: xyzrpyToPose([1, 0.8 + typeIndex * 0.2, 0], [0, 0, 0]),
-              thickness: 5,
-              scale_invariant: true,
-              points: new Array(10).fill(0).map((_, i, { length }) => ({
-                x: (0.8 * i) / (length - 1),
-                y: 0.25 * Math.sin((2 * Math.PI * i) / (length - 1)),
-                z: 0,
-              })),
-              color: makeColor("#7995fb", 0.8),
-              colors: new Array(10).fill(0).map((_, i, { length }) => {
-                const { r, g, b, a } = tinycolor
-                  .fromRatio({ h: i / (length - 1), s: 1, v: 1 })
-                  .toRgb();
-                return { r: r / 255, g: g / 255, b: b / 255, a };
-              }),
-              indices: [],
-            },
-            {
-              // indexed, vertex colors
-              type,
-              pose: xyzrpyToPose([1, 1.8 + typeIndex * 0.2, 0], [0, 0, 0]),
-              thickness: 5,
-              scale_invariant: true,
-              points: rearrange(
-                new Array(10).fill(0).map((_, i, { length }) => ({
+                color: makeColor("#7995fb", 0.8),
+                colors: [],
+                indices: [],
+              },
+              {
+                // indexed, single color
+                type,
+                pose: xyzrpyToPose([0, 1.8 + typeIndex * 0.2, 0], [0, 0, 0]),
+                thickness: 0.05,
+                scale_invariant: false,
+                points: rearrange(
+                  new Array(10).fill(0).map((_, i, { length }) => ({
+                    x: (0.8 * i) / (length - 1),
+                    y: 0.25 * Math.sin((2 * Math.PI * i) / (length - 1)),
+                    z: 0,
+                  })),
+                ),
+                color: makeColor("#7995fb", 0.8),
+                colors: [],
+                indices: rearrange(new Array(10).fill(0).map((_, i) => i)),
+              },
+              {
+                // non-indexed, vertex colors
+                type,
+                pose: xyzrpyToPose([1, 0.8 + typeIndex * 0.2, 0], [0, 0, 0]),
+                thickness: 5,
+                scale_invariant: true,
+                points: new Array(10).fill(0).map((_, i, { length }) => ({
                   x: (0.8 * i) / (length - 1),
                   y: 0.25 * Math.sin((2 * Math.PI * i) / (length - 1)),
                   z: 0,
                 })),
-              ),
-              color: makeColor("#7995fb", 0.8),
-              colors: rearrange(
-                new Array(10).fill(0).map((_, i, { length }) => {
+                color: makeColor("#7995fb", 0.8),
+                colors: new Array(10).fill(0).map((_, i, { length }) => {
                   const { r, g, b, a } = tinycolor
                     .fromRatio({ h: i / (length - 1), s: 1, v: 1 })
                     .toRgb();
                   return { r: r / 255, g: g / 255, b: b / 255, a };
                 }),
-              ),
-              indices: rearrange(new Array(10).fill(0).map((_, i) => i)),
-            },
-          ]),
+                indices: [],
+              },
+              {
+                // indexed, vertex colors
+                type,
+                pose: xyzrpyToPose([1, 1.8 + typeIndex * 0.2, 0], [0, 0, 0]),
+                thickness: 5,
+                scale_invariant: true,
+                points: rearrange(
+                  new Array(10).fill(0).map((_, i, { length }) => ({
+                    x: (0.8 * i) / (length - 1),
+                    y: 0.25 * Math.sin((2 * Math.PI * i) / (length - 1)),
+                    z: 0,
+                  })),
+                ),
+                color: makeColor("#7995fb", 0.8),
+                colors: rearrange(
+                  new Array(10).fill(0).map((_, i, { length }) => {
+                    const { r, g, b, a } = tinycolor
+                      .fromRatio({ h: i / (length - 1), s: 1, v: 1 })
+                      .toRgb();
+                    return { r: r / 255, g: g / 255, b: b / 255, a };
+                  }),
+                ),
+                indices: rearrange(new Array(10).fill(0).map((_, i) => i)),
+              },
+              {
+                // empty points
+                type,
+                pose: xyzrpyToPose([1, 1.8 + typeIndex * 0.2, 0], [0, 0, 0]),
+                thickness: 5,
+                scale_invariant: true,
+                points: [],
+                color: makeColor("#7995fb", 0.8),
+                colors: [],
+                indices: [],
+              },
+            ],
+          ),
 
-          triangles: [],
+          triangles: [
+            {
+              ...icospherePointsAndIndices,
+              pose: xyzrpyToPose([0, 9, 0], [0.5685618507342682, 0, 0]),
+              color: makeColor("#ff0048", 1.0),
+              colors: [],
+            },
+            {
+              ...icospherePointsAndIndices,
+              pose: xyzrpyToPose([1, 9, 0], [0.5685618507342682, 0, 0]),
+              color: makeColor("#ff0048", 0.5),
+              colors: [
+                { r: 1, g: 0, b: 0, a: 0 },
+                { r: 1, g: 0.6000000000000001, b: 0, a: 0.1 },
+                { r: 0.7999999999999998, g: 1, b: 0, a: 0.2 },
+                { r: 0.20000000000000018, g: 1, b: 0, a: 0.3 },
+                { r: 0, g: 1, b: 0.40000000000000036, a: 0.4 },
+                { r: 0, g: 1, b: 1, a: 0.5 },
+                { r: 0, g: 0.40000000000000036, b: 1, a: 0.6 },
+                { r: 0.1999999999999993, g: 0, b: 1, a: 0.7 },
+                { r: 0.8000000000000007, g: 0, b: 1, a: 0.8 },
+                { r: 1, g: 0, b: 0.5999999999999996, a: 0.9 },
+                { r: 1, g: 0, b: 0, a: 1 },
+                { r: 1, g: 0.6000000000000005, b: 0, a: 1.1 },
+              ] as ColorRGBA[],
+            },
+          ],
 
           texts: [
             {
@@ -258,6 +314,7 @@ function makeStoryScene({
         },
       ],
     },
+    schemaName: "foxglove.SceneUpdate",
     sizeInBytes: 0,
   };
 }
@@ -265,9 +322,9 @@ function makeStoryScene({
 BasicEntities.parameters = { colorScheme: "light", chromatic: { delay: 100 } };
 export function BasicEntities(): JSX.Element {
   const topics: Topic[] = [
-    { name: "transforms", datatype: "foxglove.FrameTransform" },
-    { name: "scene1", datatype: "foxglove.SceneUpdate" },
-    { name: "scene2", datatype: "foxglove.SceneUpdate" },
+    { name: "transforms", schemaName: "foxglove.FrameTransform" },
+    { name: "scene1", schemaName: "foxglove.SceneUpdate" },
+    { name: "scene2", schemaName: "foxglove.SceneUpdate" },
   ];
 
   const scene1 = makeStoryScene({ topic: "scene1", frameId: "frame1" });
@@ -283,6 +340,7 @@ export function BasicEntities(): JSX.Element {
       translation: { x: 1e7, y: 0, z: 0 },
       rotation: QUAT_IDENTITY,
     },
+    schemaName: "foxglove.FrameTransform",
     sizeInBytes: 0,
   };
   const tf2: MessageEvent<FrameTransform> = {
@@ -295,6 +353,7 @@ export function BasicEntities(): JSX.Element {
       translation: { x: -4, y: -4, z: 0 },
       rotation: QUAT_IDENTITY,
     },
+    schemaName: "foxglove.FrameTransform",
     sizeInBytes: 0,
   };
   const tf3: MessageEvent<FrameTransform> = {
@@ -307,6 +366,7 @@ export function BasicEntities(): JSX.Element {
       translation: { x: 0, y: -4, z: 0 },
       rotation: QUAT_IDENTITY,
     },
+    schemaName: "foxglove.FrameTransform",
     sizeInBytes: 0,
   };
 
@@ -335,8 +395,8 @@ export function BasicEntities(): JSX.Element {
           cameraState: {
             distance: 12,
             perspective: true,
-            phi: 30,
-            targetOffset: [0, -2, 0],
+            phi: 40,
+            targetOffset: [0, 0, 0],
             thetaOffset: rad2deg(-0.25),
             fovy: 45,
             near: 0.01,

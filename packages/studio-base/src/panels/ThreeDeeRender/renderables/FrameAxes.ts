@@ -2,6 +2,7 @@
 // License, v2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/
 
+import { Immutable } from "immer";
 import * as THREE from "three";
 import { Line2 } from "three/examples/jsm/lines/Line2";
 import { LineGeometry } from "three/examples/jsm/lines/LineGeometry";
@@ -12,11 +13,11 @@ import type { RosValue } from "@foxglove/studio-base/players/types";
 import { Label } from "@foxglove/three-text";
 
 import { BaseUserData, Renderable } from "../Renderable";
-import { Renderer } from "../Renderer";
+import { Renderer, RendererConfig } from "../Renderer";
 import { SceneExtension } from "../SceneExtension";
 import { SettingsTreeEntry } from "../SettingsManager";
 import { getLuminance, stringToRgb } from "../color";
-import { BaseSettings, fieldSize } from "../settings";
+import { BaseSettings, fieldSize, PRECISION_DEGREES, PRECISION_DISTANCE } from "../settings";
 import { Duration, Transform, makePose, CoordinateFrame, MAX_DURATION } from "../transforms";
 import { Axis, AXIS_LENGTH } from "./Axis";
 import {
@@ -28,14 +29,21 @@ import {
 } from "./CoreSettings";
 import { makeLinePickingMaterial } from "./markers/materials";
 
-export type LayerSettingsTransform = BaseSettings;
+export type LayerSettingsTransform = BaseSettings & {
+  xyzOffset: Readonly<[number | undefined, number | undefined, number | undefined]>;
+  rpyOffset: Readonly<[number | undefined, number | undefined, number | undefined]>;
+};
 
 const PICKING_LINE_SIZE = 6;
 const PI_2 = Math.PI / 2;
 
+const DEFAULT_EDITABLE = false;
+
 const DEFAULT_SETTINGS: LayerSettingsTransform = {
   visible: true,
   frameLocked: true,
+  xyzOffset: [0, 0, 0],
+  rpyOffset: [0, 0, 0],
 };
 
 export type FrameAxisUserData = BaseUserData & {
@@ -69,15 +77,15 @@ const tempLower: [Duration, Transform] = [0n, Transform.Identity()];
 const tempUpper: [Duration, Transform] = [0n, Transform.Identity()];
 const tempQuaternion = new THREE.Quaternion();
 const tempEuler = new THREE.Euler();
+const tempTfPath: [string, string] = ["transforms", ""];
 
 export class FrameAxes extends SceneExtension<FrameAxisRenderable> {
-  private static lineGeometry: LineGeometry | undefined;
-
   private lineMaterial: LineMaterial;
   private linePickingMaterial: THREE.ShaderMaterial;
 
   private labelForegroundColor = 1;
   private labelBackgroundColor = new THREE.Color();
+  private lineGeometry: LineGeometry;
 
   public constructor(renderer: Renderer) {
     super("foxglove.FrameAxes", renderer);
@@ -91,6 +99,12 @@ export class FrameAxes extends SceneExtension<FrameAxisRenderable> {
     this.lineMaterial.color = color;
 
     const options = { resolution: renderer.input.canvasSize, worldUnits: false };
+
+    this.lineGeometry = this.renderer.sharedGeometry.getGeometry(
+      this.constructor.name,
+      createLineGeometry,
+    );
+
     this.linePickingMaterial = makeLinePickingMaterial(PICKING_LINE_SIZE, options);
 
     renderer.on("transformTreeUpdated", this.handleTransformTreeUpdated);
@@ -120,6 +134,11 @@ export class FrameAxes extends SceneExtension<FrameAxisRenderable> {
         defaultExpansionState: "collapsed",
         order: 0,
         fields: {
+          editable: {
+            label: "Editable",
+            input: "boolean",
+            value: config.scene.transforms?.editable ?? DEFAULT_EDITABLE,
+          },
           showLabel: {
             label: "Labels",
             input: "boolean",
@@ -155,23 +174,30 @@ export class FrameAxes extends SceneExtension<FrameAxisRenderable> {
             input: "rgb",
             value: config.scene.transforms?.lineColor ?? DEFAULT_LINE_COLOR_STR,
           },
+          // Disabled until we can efficiently preload transforms
+          // enablePreloading: {
+          //   label: "Enable preloading",
+          //   input: "boolean",
+          //   value: config.scene.transforms?.enablePreloading ?? true,
+          // },
         },
       },
     };
 
     let order = 1;
     for (const { label, value: frameId } of this.renderer.coordinateFrameList) {
-      const frameIdSanitized = frameId === "settings" ? "$settings" : frameId;
-      const tfConfig = (configTransforms[frameIdSanitized] ??
-        {}) as Partial<LayerSettingsTransform>;
+      const frameKey = `frame:${frameId}`;
+      const tfConfig = (configTransforms[frameKey] ?? {}) as Partial<LayerSettingsTransform>;
       const frame = this.renderer.transformTree.frame(frameId);
-      const fields = buildSettingsFields(frame, this.renderer.currentTime);
-      children[frameIdSanitized] = {
+      const fields = buildSettingsFields(frame, this.renderer.currentTime, config);
+      tempTfPath[1] = frameKey;
+      children[frameKey] = {
         label,
         fields,
         visible: tfConfig.visible ?? true,
         order: order++,
         defaultExpansionState: "collapsed",
+        error: this.renderer.settings.errors.errors.errorAtPath(tempTfPath),
       };
     }
 
@@ -312,9 +338,9 @@ export class FrameAxes extends SceneExtension<FrameAxisRenderable> {
 
       this.renderer.updateConfig((draft) => {
         for (const frameId of this.renderables.keys()) {
-          const frameIdSanitized = frameId === "settings" ? "$settings" : frameId;
-          draft.transforms[frameIdSanitized] ??= {};
-          draft.transforms[frameIdSanitized]!.visible = value;
+          const frameKeySanitized = frameId === "settings" ? "$settings" : `frame:${frameId}`;
+          draft.transforms[frameKeySanitized] ??= {};
+          draft.transforms[frameKeySanitized]!.visible = value;
         }
       });
 
@@ -333,7 +359,7 @@ export class FrameAxes extends SceneExtension<FrameAxisRenderable> {
     }
 
     if (path.length !== 3) {
-      return; // Doesn't match the pattern of ["transforms", "settings" | frameId, field]
+      return; // Doesn't match the pattern of ["transforms", "settings" | `frame:${frameId}`, field]
     }
 
     if (path[1] === "settings") {
@@ -342,7 +368,9 @@ export class FrameAxes extends SceneExtension<FrameAxisRenderable> {
 
       this.saveSetting(["scene", "transforms", setting], value);
 
-      if (setting === "showLabel") {
+      if (setting === "editable") {
+        this._updateFrameAxes();
+      } else if (setting === "showLabel") {
         const showLabel = value as boolean | undefined;
         this.setLabelVisible(showLabel ?? true);
       } else if (setting === "labelSize") {
@@ -362,13 +390,16 @@ export class FrameAxes extends SceneExtension<FrameAxisRenderable> {
       this.saveSetting(path, action.payload.value);
 
       // Update the renderable
-      const frameId = path[1]!;
+      const frameKey = path[1]!;
+      const frameId = frameKey.replace(/^frame:/, "");
       const renderable = this.renderables.get(frameId);
       if (renderable) {
-        const settings = this.renderer.config.transforms[frameId] as
+        const settings = this.renderer.config.transforms[frameKey] as
           | Partial<LayerSettingsTransform>
           | undefined;
         renderable.userData.settings = { ...DEFAULT_SETTINGS, ...settings };
+
+        this._updateFrameAxis(renderable);
       }
     }
   };
@@ -406,11 +437,12 @@ export class FrameAxes extends SceneExtension<FrameAxisRenderable> {
     );
 
     // Set the initial settings from default values merged with any user settings
-    const userSettings = config.transforms[frameId] as Partial<LayerSettingsTransform> | undefined;
+    const frameKey = `frame:${frameId}`;
+    const userSettings = config.transforms[frameKey] as Partial<LayerSettingsTransform> | undefined;
     const settings = { ...DEFAULT_SETTINGS, ...userSettings };
 
     // Parent line
-    const parentLine = new Line2(FrameAxes.LineGeometry(), this.lineMaterial);
+    const parentLine = new Line2(this.lineGeometry, this.lineMaterial);
     parentLine.castShadow = true;
     parentLine.receiveShadow = false;
     parentLine.userData.pickingMaterial = this.linePickingMaterial;
@@ -428,7 +460,7 @@ export class FrameAxes extends SceneExtension<FrameAxisRenderable> {
       messageTime: 0n,
       frameId,
       pose: makePose(),
-      settingsPath: ["transforms", frameId],
+      settingsPath: ["transforms", frameKey],
       settings,
       axis,
       label,
@@ -440,29 +472,54 @@ export class FrameAxes extends SceneExtension<FrameAxisRenderable> {
 
     this.add(renderable);
     this.renderables.set(frameId, renderable);
+
+    this._updateFrameAxis(renderable);
   }
 
-  private static LineGeometry(): LineGeometry {
-    if (!FrameAxes.lineGeometry) {
-      FrameAxes.lineGeometry = new LineGeometry();
-      FrameAxes.lineGeometry.setPositions([0, 0, 0, 1, 0, 0]);
+  private _updateFrameAxes(): void {
+    for (const renderable of this.renderables.values()) {
+      this._updateFrameAxis(renderable);
     }
-    return FrameAxes.lineGeometry;
   }
+
+  private _updateFrameAxis(renderable: FrameAxisRenderable): void {
+    const frame = this.renderer.transformTree.getOrCreateFrame(renderable.userData.frameId);
+
+    // Check if TF editing is disabled
+    const editable = this.renderer.config.scene.transforms?.editable ?? DEFAULT_EDITABLE;
+    if (!editable) {
+      frame.offsetPosition = undefined;
+      frame.offsetEulerDegrees = undefined;
+      return;
+    }
+
+    const frameKey = `frame:${renderable.userData.frameId}`;
+    frame.offsetPosition = getOffset(this.renderer.config.transforms[frameKey]?.xyzOffset);
+    frame.offsetEulerDegrees = getOffset(this.renderer.config.transforms[frameKey]?.rpyOffset);
+  }
+}
+function createLineGeometry(): LineGeometry {
+  const lineGeometry = new LineGeometry();
+  lineGeometry.setPositions([0, 0, 0, 1, 0, 0]);
+  return lineGeometry;
 }
 
 function buildSettingsFields(
   frame: CoordinateFrame | undefined,
   currentTime: bigint | undefined,
+  config: Immutable<RendererConfig>,
 ): SettingsTreeFields {
-  let ageValue: string | undefined;
-  let xyzValue: THREE.Vector3Tuple | undefined;
-  let rpyValue: THREE.Vector3Tuple | undefined;
+  const frameKey = frame ? `frame:${frame.id}` : "";
   const parentFrameId = frame?.parent()?.id;
 
   if (parentFrameId == undefined) {
     return { parent: { label: "Parent", input: "string", readonly: true, value: "<root>" } };
   }
+
+  const historySizeValue = String(frame?.transformsSize() ?? 0);
+  let ageValue: string | undefined;
+  let xyzValue: THREE.Vector3Tuple | undefined;
+  let rpyValue: THREE.Vector3Tuple | undefined;
 
   if (currentTime != undefined && frame) {
     if (frame.findClosestTransforms(tempLower, tempUpper, currentTime, MAX_DURATION)) {
@@ -482,7 +539,7 @@ function buildSettingsFields(
     }
   }
 
-  return {
+  const fields: SettingsTreeFields = {
     parent: {
       label: "Parent",
       input: "string",
@@ -495,10 +552,16 @@ function buildSettingsFields(
       readonly: true,
       value: ageValue,
     },
+    historySize: {
+      label: "History Size",
+      input: "string",
+      readonly: true,
+      value: historySizeValue,
+    },
     xyz: {
       label: "Translation",
       input: "vec3",
-      precision: 3,
+      precision: PRECISION_DISTANCE,
       labels: ["X", "Y", "Z"],
       readonly: true,
       value: xyzValue,
@@ -506,12 +569,45 @@ function buildSettingsFields(
     rpy: {
       label: "Rotation",
       input: "vec3",
-      precision: 3,
+      precision: PRECISION_DEGREES,
       labels: ["R", "P", "Y"],
       readonly: true,
       value: rpyValue,
     },
   };
+
+  if (config.scene.transforms?.editable ?? DEFAULT_EDITABLE) {
+    let xyzOffsetValue = config.transforms[frameKey]?.xyzOffset as THREE.Vector3Tuple | undefined;
+    let rpyOffsetValue = config.transforms[frameKey]?.rpyOffset as THREE.Vector3Tuple | undefined;
+
+    if (xyzOffsetValue && vec3IsZero(xyzOffsetValue)) {
+      xyzOffsetValue = undefined;
+    }
+    if (rpyOffsetValue && vec3IsZero(rpyOffsetValue)) {
+      rpyOffsetValue = undefined;
+    }
+
+    fields.xyzOffset = {
+      label: "Translation Offset",
+      input: "vec3",
+      precision: PRECISION_DISTANCE,
+      step: 0.1,
+      labels: ["X", "Y", "Z"],
+      value: xyzOffsetValue,
+    };
+    fields.rpyOffset = {
+      label: "Rotation Offset",
+      input: "vec3",
+      precision: PRECISION_DEGREES,
+      step: 1,
+      min: -180,
+      max: 180,
+      labels: ["R", "P", "Y"],
+      value: rpyOffsetValue,
+    };
+  }
+
+  return fields;
 }
 
 const MS_TENTH_NS = BigInt(1e5);
@@ -541,4 +637,21 @@ function abs(x: bigint): bigint {
 
 function round(x: number, precision: number): number {
   return Number(x.toFixed(precision));
+}
+
+function vec3IsZero(v: THREE.Vector3Tuple, eps = 1e-6): boolean {
+  return Math.abs(v[0]) < eps && Math.abs(v[1]) < eps && Math.abs(v[2]) < eps;
+}
+
+function getOffset(
+  maybeOffset: Readonly<[number | undefined, number | undefined, number | undefined]> | undefined,
+): THREE.Vector3Tuple | undefined {
+  if (!maybeOffset) {
+    return undefined;
+  }
+  const [x = 0, y = 0, z = 0] = maybeOffset;
+  if (x === 0 && y === 0 && z === 0) {
+    return undefined;
+  }
+  return [x, y, z];
 }

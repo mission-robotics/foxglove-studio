@@ -3,11 +3,12 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/
 
 import { useEffect, useMemo } from "react";
-import { useAsync } from "react-use";
+import { useAsyncFn } from "react-use";
+import { useDebounce } from "use-debounce";
 
 import { scaleValue as scale } from "@foxglove/den/math";
 import Logger from "@foxglove/log";
-import { subtract, Time, toSec } from "@foxglove/rostime";
+import { areEqual as areEqualTimes, subtract, Time, toSec } from "@foxglove/rostime";
 import {
   MessagePipelineContext,
   useMessagePipeline,
@@ -24,7 +25,6 @@ import {
   useHoverValue,
   useTimelineInteractionState,
 } from "@foxglove/studio-base/context/TimelineInteractionStateContext";
-import { EventsSelectors } from "@foxglove/studio-base/providers/EventsProvider";
 import { ConsoleEvent } from "@foxglove/studio-base/services/ConsoleApi";
 
 const HOVER_TOLERANCE = 0.01;
@@ -52,6 +52,9 @@ function positionEvents(
   });
 }
 
+const selectEventFetchCount = (store: EventsStore) => store.eventFetchCount;
+const selectEventFilter = (store: EventsStore) => store.filter;
+const selectEvents = (store: EventsStore) => store.events;
 const selectUrlState = (ctx: MessagePipelineContext) => ctx.playerState.urlState;
 const selectSetEvents = (store: EventsStore) => store.setEvents;
 const selectSetEventsAtHoverValue = (store: TimelineInteractionStateStore) =>
@@ -71,7 +74,11 @@ export function EventsSyncAdapter(): ReactNull {
   const hoverValue = useHoverValue();
   const startTime = useMessagePipeline(selectStartTime);
   const endTime = useMessagePipeline(selectEndTime);
-  const events = useEvents(EventsSelectors.selectFilteredEvents);
+  const events = useEvents(selectEvents);
+  const eventFetchCount = useEvents(selectEventFetchCount);
+  const filter = useEvents(selectEventFilter);
+
+  const [debouncedFilter] = useDebounce(filter, 300);
 
   const timeRange = useMemo(() => {
     if (!startTime || !endTime) {
@@ -81,19 +88,28 @@ export function EventsSyncAdapter(): ReactNull {
     return toSec(subtract(endTime, startTime));
   }, [endTime, startTime]);
 
+  const currentUserPresent = currentUser != undefined;
+
   // Sync events with console API.
-  useAsync(async () => {
+  const [_events, syncEvents] = useAsyncFn(async () => {
+    // Compare start and end time to avoid a redundant fetch as the
+    // datasource bootstraps through the state where they are not
+    // completely determined.
     if (
-      currentUser &&
+      currentUserPresent &&
       startTime &&
       endTime &&
+      !areEqualTimes(startTime, endTime) &&
       urlState?.sourceId === "foxglove-data-platform" &&
       urlState.parameters != undefined
     ) {
       const queryParams = urlState.parameters as { deviceId: string; start: string; end: string };
       setEvents({ loading: true });
       try {
-        const fetchedEvents = await consoleApi.getEvents(queryParams);
+        const fetchedEvents = await consoleApi.getEvents({
+          ...queryParams,
+          query: debouncedFilter,
+        });
         const positionedEvents = positionEvents(fetchedEvents, startTime, endTime);
         setEvents({ loading: false, value: positionedEvents });
       } catch (error) {
@@ -105,7 +121,8 @@ export function EventsSyncAdapter(): ReactNull {
     }
   }, [
     consoleApi,
-    currentUser,
+    currentUserPresent,
+    debouncedFilter,
     endTime,
     setEvents,
     startTime,
@@ -113,11 +130,15 @@ export function EventsSyncAdapter(): ReactNull {
     urlState?.sourceId,
   ]);
 
+  useEffect(() => {
+    syncEvents().catch((error) => log.error(error));
+  }, [syncEvents, eventFetchCount]);
+
   // Sync hovered value and hovered events.
   useEffect(() => {
     if (hoverValue && timeRange != undefined && timeRange > 0) {
       const hoverPosition = scale(hoverValue.value, 0, timeRange, 0, 1);
-      const hoveredEvents = events.filter((event) => {
+      const hoveredEvents = (events.value ?? []).filter((event) => {
         return (
           hoverPosition >= event.startPosition * (1 - HOVER_TOLERANCE) &&
           hoverPosition <= event.endPosition * (1 + HOVER_TOLERANCE)

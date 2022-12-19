@@ -2,8 +2,6 @@
 // License, v2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/
 
-import type {} from "@mui/x-data-grid/themeAugmentation";
-
 import { alpha, Theme, ThemeOptions } from "@mui/material";
 import { CSSProperties } from "react";
 
@@ -90,6 +88,19 @@ export default function muiComponents(theme: Theme): ThemeOptions["components"] 
         },
       },
     },
+    MuiFab: {
+      defaultProps: {
+        color: "inherit",
+      },
+      styleOverrides: {
+        root: {
+          boxShadow: theme.shadows[2],
+        },
+        colorInherit: {
+          backgroundColor: theme.palette.background.paper,
+        },
+      },
+    },
     MuiFormControl: {
       defaultProps: {
         variant: "standard",
@@ -131,6 +142,11 @@ export default function muiComponents(theme: Theme): ThemeOptions["components"] 
     MuiCardActionArea: {
       defaultProps: {
         disableRipple: true,
+      },
+      styleOverrides: {
+        focusHighlight: {
+          ...disableBackgroundColorTransition,
+        },
       },
     },
     MuiCardContent: {

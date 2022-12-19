@@ -33,7 +33,7 @@ export const DEFAULT_VELODYNE_PORT = 2369;
 const RPM = 600;
 const PROBLEM_SOCKET_ERROR = "SOCKET_ERROR";
 const TOPIC_NAME = "/velodyne_points";
-const TOPIC: Topic = { name: TOPIC_NAME, datatype: "velodyne_msgs/VelodyneScan" };
+const TOPIC: Topic = { name: TOPIC_NAME, schemaName: "velodyne_msgs/VelodyneScan" };
 const DATATYPES: RosDatatypes = new Map(
   Object.entries({
     "velodyne_msgs/VelodyneScan": {
@@ -102,7 +102,8 @@ export default class VelodynePlayer implements Player {
     if (this._closed) {
       return;
     }
-    this._presence = PlayerPresence.INITIALIZING;
+    this._presence = PlayerPresence.PRESENT;
+    this._emitState();
 
     if (this._socket == undefined) {
       const net = await Sockets.Create();
@@ -148,7 +149,6 @@ export default class VelodynePlayer implements Player {
     this._clearProblem(PROBLEM_SOCKET_ERROR, { skipEmit: true });
 
     if (this._seq === 0) {
-      this._metricsCollector.initialized();
       this._metricsCollector.recordTimeToFirstMsgs();
     }
 
@@ -169,7 +169,13 @@ export default class VelodynePlayer implements Player {
       };
 
       const sizeInBytes = this._packets.reduce((acc, packet) => acc + packet.data.byteLength, 0);
-      const msg: MessageEvent<unknown> = { topic: TOPIC_NAME, receiveTime, message, sizeInBytes };
+      const msg: MessageEvent<unknown> = {
+        topic: TOPIC_NAME,
+        receiveTime,
+        message,
+        sizeInBytes,
+        schemaName: TOPIC.schemaName,
+      };
       this._parsedMessages.push(msg);
       this._packets = [];
 

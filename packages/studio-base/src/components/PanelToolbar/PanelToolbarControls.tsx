@@ -25,9 +25,9 @@ import Stack from "@foxglove/studio-base/components/Stack";
 import { useSelectedPanels } from "@foxglove/studio-base/context/CurrentLayoutContext";
 import PanelCatalogContext from "@foxglove/studio-base/context/PanelCatalogContext";
 import {
-  PanelSettingsEditorStore,
-  usePanelSettingsEditorStore,
-} from "@foxglove/studio-base/context/PanelSettingsEditorContext";
+  PanelStateStore,
+  usePanelStateStore,
+} from "@foxglove/studio-base/context/PanelStateContext";
 import { UserProfileStorageContext } from "@foxglove/studio-base/context/UserProfileStorageContext";
 import { useWorkspace } from "@foxglove/studio-base/context/WorkspaceContext";
 
@@ -36,9 +36,6 @@ import { PanelActionsDropdown } from "./PanelActionsDropdown";
 type PanelToolbarControlsProps = {
   additionalIcons?: React.ReactNode;
   isUnknownPanel: boolean;
-  menuOpen: boolean;
-  // eslint-disable-next-line @foxglove/no-boolean-parameters
-  setMenuOpen: (_: boolean) => void;
 };
 
 const useStyles = makeStyles()((theme) => ({
@@ -63,7 +60,7 @@ const useStyles = makeStyles()((theme) => ({
 
 const PanelToolbarControlsComponent = forwardRef<HTMLDivElement, PanelToolbarControlsProps>(
   (props, ref) => {
-    const { additionalIcons, isUnknownPanel, menuOpen, setMenuOpen } = props;
+    const { additionalIcons, isUnknownPanel } = props;
     const { id: panelId, type: panelType } = useContext(PanelContext) ?? {};
     const panelCatalog = useContext(PanelCatalogContext);
     const { setSelectedPanelIds } = useSelectedPanels();
@@ -71,12 +68,11 @@ const PanelToolbarControlsComponent = forwardRef<HTMLDivElement, PanelToolbarCon
     const { classes } = useStyles();
 
     const hasSettingsSelector = useCallback(
-      (store: PanelSettingsEditorStore) =>
-        panelId ? store.settingsTrees[panelId] != undefined : false,
+      (store: PanelStateStore) => (panelId ? store.settingsTrees[panelId] != undefined : false),
       [panelId],
     );
 
-    const hasSettings = usePanelSettingsEditorStore(hasSettingsSelector);
+    const hasSettings = usePanelStateStore(hasSettingsSelector);
 
     const userProfileStorage = useContext(UserProfileStorageContext);
     const [{ value: settingsOnboardingTooltip }, loadOnboardingState] =
@@ -122,7 +118,10 @@ const PanelToolbarControlsComponent = forwardRef<HTMLDivElement, PanelToolbarCon
     }, [panelId, onDismissTooltip, setSelectedPanelIds, openPanelSettings]);
 
     let settingsButton = (
-      <ToolbarIconButton onClick={openSettings}>
+      <ToolbarIconButton
+        title={settingsOnboardingTooltip ? undefined : "Settings"}
+        onClick={openSettings}
+      >
         <SettingsIcon />
       </ToolbarIconButton>
     );
@@ -168,11 +167,7 @@ const PanelToolbarControlsComponent = forwardRef<HTMLDivElement, PanelToolbarCon
       <Stack direction="row" alignItems="center" paddingLeft={1} ref={ref}>
         {additionalIcons}
         {hasSettings && settingsButton}
-        <PanelActionsDropdown
-          isOpen={menuOpen}
-          setIsOpen={setMenuOpen}
-          isUnknownPanel={isUnknownPanel}
-        />
+        <PanelActionsDropdown isUnknownPanel={isUnknownPanel} />
       </Stack>
     );
   },

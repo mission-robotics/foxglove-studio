@@ -3,6 +3,8 @@
 // License, v2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/
 
+import { last } from "lodash";
+
 import {
   MessageEvent,
   PlayerCapabilities,
@@ -148,12 +150,18 @@ describe("IterablePlayer", () => {
       // before initialize
       { ...baseState, activeData: { ...baseState.activeData, endTime: { sec: 0, nsec: 0 } } },
       // start delay
-      baseState,
-      // startPlay
       {
         ...baseState,
         presence: PlayerPresence.PRESENT,
-        activeData: { ...baseState.activeData, currentTime: { sec: 0, nsec: 99000000 } },
+      },
+      // initial play
+      {
+        ...baseState,
+        presence: PlayerPresence.PRESENT,
+        activeData: {
+          ...baseState.activeData,
+          currentTime: { sec: 0, nsec: 99000000 },
+        },
       },
       // idle
       {
@@ -168,6 +176,53 @@ describe("IterablePlayer", () => {
     ]);
 
     player.close();
+  });
+
+  it("provides error message for inconsistent topic datatypes", async () => {
+    class DuplicateTopicsSource implements IIterableSource {
+      public async initialize(): Promise<Initalization> {
+        return {
+          start: { sec: 0, nsec: 0 },
+          end: { sec: 1, nsec: 0 },
+          topics: [
+            { name: "A", schemaName: "B" },
+            { name: "A", schemaName: "C" },
+          ],
+          topicStats: new Map(),
+          profile: undefined,
+          problems: [],
+          datatypes: new Map([
+            ["B", { name: "B", definitions: [] }],
+            ["C", { name: "C", definitions: [] }],
+          ]),
+          publishersByTopic: new Map(),
+        };
+      }
+
+      public async *messageIterator() {}
+
+      public async getBackfillMessages() {
+        return [];
+      }
+    }
+
+    const source = new DuplicateTopicsSource();
+    const player = new IterablePlayer({
+      source,
+      enablePreload: false,
+      sourceId: "test",
+    });
+    const store = new PlayerStateStore(4);
+    player.setListener(async (state) => await store.add(state));
+    const playerStates = await store.done;
+    expect(last(playerStates)!.problems).toEqual([
+      {
+        message: "Inconsistent datatype for topic: A",
+        severity: "warn",
+        tip: "Topic A has messages with multiple datatypes: B, C. This may result in errors during visualization.",
+      },
+    ]);
+    (console.warn as jest.Mock).mockClear();
   });
 
   it("when seeking during a seek backfill, start another seek after the current one exits", async () => {
@@ -201,6 +256,7 @@ describe("IterablePlayer", () => {
             receiveTime: { sec: 0, nsec: 1 },
             message: undefined,
             sizeInBytes: 0,
+            schemaName: "foo",
           },
         ];
       };
@@ -255,6 +311,7 @@ describe("IterablePlayer", () => {
             receiveTime: { sec: 0, nsec: 1 },
             sizeInBytes: 0,
             topic: "foo",
+            schemaName: "foo",
           },
         ],
       },
@@ -291,13 +348,14 @@ describe("IterablePlayer", () => {
       source.messageIterator = origMsgIterator;
 
       yield {
+        type: "message-event",
         msgEvent: {
           topic: "foo",
           receiveTime: { sec: 0, nsec: 99000001 },
           message: undefined,
           sizeInBytes: 0,
+          schemaName: "foo",
         },
-        problem: undefined,
         connectionId: undefined,
       };
     };
@@ -336,13 +394,14 @@ describe("IterablePlayer", () => {
       source.messageIterator = origMsgIterator;
 
       yield {
+        type: "message-event",
         msgEvent: {
           topic: "foo",
           receiveTime: { sec: 0, nsec: 99000001 },
           message: undefined,
           sizeInBytes: 0,
+          schemaName: "foo",
         },
-        problem: undefined,
         connectionId: undefined,
       };
     };
@@ -382,8 +441,22 @@ describe("IterablePlayer", () => {
     await store.done;
 
     expect(messageIteratorSpy.mock.calls).toEqual([
-      [{ start: { sec: 0, nsec: 0 }, end: { sec: 1, nsec: 0 }, topics: ["foo"] }],
-      [{ start: { sec: 0, nsec: 99000001 }, end: { sec: 1, nsec: 0 }, topics: ["bar", "foo"] }],
+      [
+        {
+          start: { sec: 0, nsec: 0 },
+          end: { sec: 1, nsec: 0 },
+          topics: ["foo"],
+          consumptionType: "partial",
+        },
+      ],
+      [
+        {
+          start: { sec: 0, nsec: 99000001 },
+          end: { sec: 1, nsec: 0 },
+          topics: ["bar", "foo"],
+          consumptionType: "partial",
+        },
+      ],
     ]);
 
     player.close();

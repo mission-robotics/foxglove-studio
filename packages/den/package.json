@@ -23,5 +23,9 @@
   "homepage": "https://foxglove.dev/",
   "devDependencies": {
     "typescript": "4.8.2"
+  },
+  "dependencies": {
+    "async-mutex": "0.3.2",
+    "xacro-parser": "0.3.8"
   }
 }

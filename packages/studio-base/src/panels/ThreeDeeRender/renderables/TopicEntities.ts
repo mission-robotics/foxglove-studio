@@ -3,11 +3,7 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/
 
 import { toNanoSec } from "@foxglove/rostime";
-import {
-  SceneEntity,
-  SceneEntityDeletion,
-  SceneEntityDeletionType,
-} from "@foxglove/schemas/schemas/typescript";
+import { SceneEntity, SceneEntityDeletion, SceneEntityDeletionType } from "@foxglove/schemas";
 
 import { BaseUserData, Renderable } from "../Renderable";
 import { Renderer } from "../Renderer";
@@ -21,6 +17,7 @@ import { RenderableLines } from "./primitives/RenderableLines";
 import { RenderableModels } from "./primitives/RenderableModels";
 import { RenderableSpheres } from "./primitives/RenderableSpheres";
 import { RenderableTexts } from "./primitives/RenderableTexts";
+import { RenderableTriangles } from "./primitives/RenderableTriangles";
 import { ALL_PRIMITIVE_TYPES, PrimitiveType } from "./primitives/types";
 import { missingTransformMessage, MISSING_TRANSFORM } from "./transforms";
 
@@ -39,6 +36,7 @@ type EntityRenderables = {
   [PrimitiveType.ARROWS]?: RenderableArrows;
   [PrimitiveType.SPHERES]?: RenderableSpheres;
   [PrimitiveType.TEXTS]?: RenderableTexts;
+  [PrimitiveType.TRIANGLES]?: RenderableTriangles;
 };
 
 const PRIMITIVE_KEYS = {
@@ -49,6 +47,7 @@ const PRIMITIVE_KEYS = {
   [PrimitiveType.ARROWS]: "arrows",
   [PrimitiveType.SPHERES]: "spheres",
   [PrimitiveType.TEXTS]: "texts",
+  [PrimitiveType.TRIANGLES]: "triangles",
 } as const;
 
 export class TopicEntities extends Renderable<EntityTopicUserData> {
@@ -149,12 +148,13 @@ export class TopicEntities extends Renderable<EntityTopicUserData> {
         if (!renderable) {
           renderable = this.primitivePool.acquire(primitiveType);
           renderable.name = `${entity.id}:${primitiveType} on ${this.topic}`;
+          renderable.userData.settingsPath = this.userData.settingsPath;
           renderable.setColorScheme(this.renderer.colorScheme);
           // @ts-expect-error TS doesn't know that renderable matches primitiveType
           renderables[primitiveType] = renderable;
           this.add(renderable);
         }
-        renderable.update(entity, this.userData.settings, receiveTime);
+        renderable.update(this.userData.topic, entity, this.userData.settings, receiveTime);
       } else if (renderable) {
         this.remove(renderable);
         delete renderables[primitiveType];
@@ -165,10 +165,10 @@ export class TopicEntities extends Renderable<EntityTopicUserData> {
 
   public deleteEntities(deletion: SceneEntityDeletion): void {
     switch (deletion.type) {
-      case 0 as SceneEntityDeletionType.MATCHING_ID:
+      case SceneEntityDeletionType.MATCHING_ID:
         this._deleteEntity(deletion.id);
         break;
-      case 1 as SceneEntityDeletionType.ALL:
+      case SceneEntityDeletionType.ALL:
         this._deleteAllEntities();
         break;
       default:

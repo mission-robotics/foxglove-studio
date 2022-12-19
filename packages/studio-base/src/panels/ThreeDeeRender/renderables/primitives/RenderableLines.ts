@@ -9,7 +9,7 @@ import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry";
 
 import { toNanoSec } from "@foxglove/rostime";
-import { LinePrimitive, LineType, SceneEntity } from "@foxglove/schemas/schemas/typescript";
+import { LinePrimitive, LineType, SceneEntity } from "@foxglove/schemas";
 import { LineMaterial } from "@foxglove/studio-base/panels/ThreeDeeRender/LineMaterial";
 import { emptyPose } from "@foxglove/studio-base/util/Pose";
 
@@ -28,7 +28,7 @@ export class RenderableLines extends RenderablePrimitive {
       messageTime: -1n,
       frameId: "",
       pose: emptyPose(),
-      settings: { visible: true, color: undefined },
+      settings: { visible: true, color: undefined, selectedIdVariable: undefined },
       settingsPath: [],
       entity: undefined,
     });
@@ -39,6 +39,9 @@ export class RenderableLines extends RenderablePrimitive {
     this._lines.length = 0;
 
     for (const primitive of lines) {
+      if (primitive.points.length === 0) {
+        continue;
+      }
       const line = this._makeLine(primitive);
       const group = new THREE.Group().add(line);
       group.position.set(
@@ -59,8 +62,8 @@ export class RenderableLines extends RenderablePrimitive {
 
   private _makeLine(primitive: LinePrimitive) {
     let geometry: LineSegmentsGeometry;
-    const isSegments = primitive.type === (2 as LineType.LINE_LIST);
-    const isLoop = primitive.type === (1 as LineType.LINE_LOOP);
+    const isSegments = primitive.type === LineType.LINE_LIST;
+    const isLoop = primitive.type === LineType.LINE_LOOP;
 
     const transparent = true;
     const material = new LineMaterial({
@@ -96,14 +99,14 @@ export class RenderableLines extends RenderablePrimitive {
     let line: LineSegments2;
 
     switch (primitive.type) {
-      case 0 as LineType.LINE_STRIP:
-      case 1 as LineType.LINE_LOOP: {
+      case LineType.LINE_STRIP:
+      case LineType.LINE_LOOP: {
         const lineGeometry = new LineGeometry(); // separate variable to work around typescript refinement
         geometry = lineGeometry;
         line = new Line2(lineGeometry, material);
         break;
       }
-      case 2 as LineType.LINE_LIST: {
+      case LineType.LINE_LIST: {
         geometry = new LineSegmentsGeometry();
         line = new LineSegments2(geometry, material);
         break;
@@ -111,6 +114,8 @@ export class RenderableLines extends RenderablePrimitive {
     }
 
     const positions = getPositions(primitive);
+    // setPosition requires the position array to be >= 6 length or else it will error
+    // we skip primitives with empty points before calling this function
     geometry.setPositions(positions);
 
     const singleColor = this.userData.settings.color
@@ -151,7 +156,7 @@ export class RenderableLines extends RenderablePrimitive {
       ? primitive.points.length >>> 1
       : isLoop
       ? primitive.points.length
-      : primitive.points.length - 1;
+      : Math.max(primitive.points.length - 1, 0);
 
     line.userData.pickingMaterial = pickingMaterial;
     return line;
@@ -166,13 +171,12 @@ export class RenderableLines extends RenderablePrimitive {
   }
 
   public override update(
+    topic: string | undefined,
     entity: SceneEntity | undefined,
     settings: LayerSettingsEntity,
     receiveTime: bigint,
   ): void {
-    this.userData.entity = entity;
-    this.userData.settings = settings;
-    this.userData.receiveTime = receiveTime;
+    super.update(topic, entity, settings, receiveTime);
     if (entity) {
       const lifetimeNs = toNanoSec(entity.lifetime);
       this.userData.expiresAt = lifetimeNs === 0n ? undefined : receiveTime + lifetimeNs;
@@ -181,7 +185,7 @@ export class RenderableLines extends RenderablePrimitive {
   }
 
   public updateSettings(settings: LayerSettingsEntity): void {
-    this.update(this.userData.entity, settings, this.userData.receiveTime);
+    this.update(this.userData.topic, this.userData.entity, settings, this.userData.receiveTime);
   }
 }
 
@@ -190,7 +194,7 @@ export class RenderableLines extends RenderablePrimitive {
  * vertices for LineGeometry or LineSegmentsGeometry.
  */
 function getPositions(primitive: LinePrimitive): Float32Array {
-  const isLoop = primitive.type === (1 as LineType.LINE_LOOP);
+  const isLoop = primitive.type === LineType.LINE_LOOP;
   let positions: Float32Array;
   const indices = primitive.indices;
   if (indices.length > 0) {
@@ -226,7 +230,7 @@ function getPositions(primitive: LinePrimitive): Float32Array {
  * vertices for LineGeometry or LineSegmentsGeometry.
  */
 function getColors(primitive: LinePrimitive): Float32Array {
-  const isLoop = primitive.type === (1 as LineType.LINE_LOOP);
+  const isLoop = primitive.type === LineType.LINE_LOOP;
   let colors: Float32Array;
   const indices = primitive.indices;
   if (indices.length > 0) {

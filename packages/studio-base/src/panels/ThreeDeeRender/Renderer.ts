@@ -11,7 +11,7 @@ import { v4 as uuidv4 } from "uuid";
 
 import Logger from "@foxglove/log";
 import { toNanoSec } from "@foxglove/rostime";
-import type { FrameTransform, SceneUpdate } from "@foxglove/schemas/schemas/typescript";
+import type { FrameTransform, SceneUpdate } from "@foxglove/schemas";
 import {
   MessageEvent,
   ParameterValue,
@@ -22,17 +22,20 @@ import {
   Topic,
   VariableValue,
 } from "@foxglove/studio";
+import { FoxgloveGrid } from "@foxglove/studio-base/panels/ThreeDeeRender/renderables/FoxgloveGrid";
+import { light, dark } from "@foxglove/studio-base/theme/palette";
 import { fonts } from "@foxglove/studio-base/util/sharedStyleConstants";
 import { LabelMaterial, LabelPool } from "@foxglove/three-text";
 
 import { Input } from "./Input";
 import { LineMaterial } from "./LineMaterial";
-import { ModelCache } from "./ModelCache";
+import { ModelCache, MeshUpAxis, DEFAULT_MESH_UP_AXIS } from "./ModelCache";
 import { PickedRenderable, Picker } from "./Picker";
 import type { Renderable } from "./Renderable";
 import { SceneExtension } from "./SceneExtension";
 import { ScreenOverlay } from "./ScreenOverlay";
 import { SettingsManager, SettingsTreeEntry } from "./SettingsManager";
+import { SharedGeometry } from "./SharedGeometry";
 import { CameraState } from "./camera";
 import { DARK_OUTLINE, LIGHT_OUTLINE, stringToRgb } from "./color";
 import { FRAME_TRANSFORM_DATATYPES } from "./foxglove";
@@ -57,6 +60,7 @@ import { Poses } from "./renderables/Poses";
 import { PublishClickTool, PublishClickType } from "./renderables/PublishClickTool";
 import { FoxgloveSceneEntities } from "./renderables/SceneEntities";
 import { Urdfs } from "./renderables/Urdfs";
+import { VelodyneScans } from "./renderables/VelodyneScans";
 import { MarkerPool } from "./renderables/markers/MarkerPool";
 import {
   Header,
@@ -69,7 +73,7 @@ import {
   Vector3,
 } from "./ros";
 import { BaseSettings, CustomLayerSettings, SelectEntry } from "./settings";
-import { makePose, Pose, Transform, TransformTree } from "./transforms";
+import { AddTransformResult, makePose, Pose, Transform, TransformTree } from "./transforms";
 
 const log = Logger.getLogger(__filename);
 
@@ -94,7 +98,7 @@ export type RendererEvents = {
   transformTreeUpdated: (renderer: Renderer) => void;
   settingsTreeChange: (renderer: Renderer) => void;
   configChange: (renderer: Renderer) => void;
-  datatypeHandlersChanged: (renderer: Renderer) => void;
+  schemaHandlersChanged: (renderer: Renderer) => void;
   topicHandlersChanged: (renderer: Renderer) => void;
 };
 
@@ -114,7 +118,12 @@ export type RendererConfig = {
     backgroundColor?: string;
     /* Scale factor to apply to all labels */
     labelScaleFactor?: number;
+    /** Ignore the <up_axis> tag in COLLADA files (matching rviz behavior) */
+    ignoreColladaUpAxis?: boolean;
+    meshUpAxis?: MeshUpAxis;
     transforms?: {
+      /** Toggles translation and rotation offset controls for frames */
+      editable?: boolean;
       /** Toggles visibility of frame axis labels */
       showLabel?: boolean;
       /** Size of frame axis labels */
@@ -125,7 +134,11 @@ export type RendererConfig = {
       lineWidth?: number;
       /** Color of the connecting line between child and parent frames */
       lineColor?: string;
+      /** Enable transform preloading */
+      enablePreloading?: boolean;
     };
+    /** Sync camera with other 3d panels */
+    syncCamera?: boolean;
     /** Toggles visibility of all topics */
     topicsVisible?: boolean;
   };
@@ -183,8 +196,8 @@ const MAX_SELECTIONS = 10;
 
 // NOTE: These do not use .convertSRGBToLinear() since background color is not
 // affected by gamma correction
-const LIGHT_BACKDROP = new THREE.Color(0xececec);
-const DARK_BACKDROP = new THREE.Color(0x121217);
+const LIGHT_BACKDROP = new THREE.Color(light.background?.default);
+const DARK_BACKDROP = new THREE.Color(dark.background?.default);
 
 // Define rendering layers for multipass rendering used for the selection effect
 const LAYER_DEFAULT = 0;
@@ -200,6 +213,8 @@ const DEFAULT_FRAME_IDS = ["base_link", "odom", "map", "earth"];
 const FOLLOW_TF_PATH = ["general", "followTf"];
 const NO_FRAME_SELECTED = "NO_FRAME_SELECTED";
 const FRAME_NOT_FOUND = "FRAME_NOT_FOUND";
+const TF_OVERFLOW = "TF_OVERFLOW";
+const CYCLE_DETECTED = "CYCLE_DETECTED";
 
 // An extensionId for creating the top-level settings nodes such as "Topics" and
 // "Custom Layers"
@@ -262,7 +277,7 @@ export class Renderer extends EventEmitter<RendererEvents> {
   // extensionId -> SceneExtension
   public sceneExtensions = new Map<string, SceneExtension>();
   // datatype -> RendererSubscription[]
-  public datatypeHandlers = new Map<string, RendererSubscription[]>();
+  public schemaHandlers = new Map<string, RendererSubscription[]>();
   // topicName -> RendererSubscription[]
   public topicHandlers = new Map<string, RendererSubscription[]>();
   // layerId -> { action, handler }
@@ -308,15 +323,17 @@ export class Renderer extends EventEmitter<RendererEvents> {
 
   public labelPool = new LabelPool({ fontFamily: fonts.MONOSPACE });
   public markerPool = new MarkerPool(this);
+  public sharedGeometry = new SharedGeometry();
 
   private _prevResolution = new THREE.Vector2();
   private _pickingEnabled = false;
   private _isUpdatingCameraState = false;
   private _animationFrame?: number;
+  private _cameraSyncError: undefined | string;
+  private _devicePixelRatioMediaQuery?: MediaQueryList;
 
   public constructor(canvas: HTMLCanvasElement, config: RendererConfig) {
     super();
-
     // NOTE: Global side effect
     THREE.Object3D.DefaultUp = new THREE.Vector3(0, 0, 1);
 
@@ -357,7 +374,8 @@ export class Renderer extends EventEmitter<RendererEvents> {
     }
 
     this.modelCache = new ModelCache({
-      ignoreColladaUpAxis: true,
+      ignoreColladaUpAxis: config.scene.ignoreColladaUpAxis ?? false,
+      meshUpAxis: config.scene.meshUpAxis ?? DEFAULT_MESH_UP_AXIS,
       edgeMaterial: this.outlineMaterial,
     });
 
@@ -411,7 +429,7 @@ export class Renderer extends EventEmitter<RendererEvents> {
 
     this.picker = new Picker(this.gl, this.scene, { debug: DEBUG_PICKING });
 
-    this.selectionBackdrop = new ScreenOverlay();
+    this.selectionBackdrop = new ScreenOverlay(this);
     this.selectionBackdrop.visible = false;
     this.scene.add(this.selectionBackdrop);
 
@@ -428,20 +446,24 @@ export class Renderer extends EventEmitter<RendererEvents> {
     this.coreSettings = new CoreSettings(this);
 
     // Internal handlers for TF messages to update the transform tree
-    this.addDatatypeSubscriptions(FRAME_TRANSFORM_DATATYPES, {
+    this.addSchemaSubscriptions(FRAME_TRANSFORM_DATATYPES, {
       handler: this.handleFrameTransform,
       forced: true,
-      preload: true,
+      // Disabled until we can efficiently preload transforms. See
+      // <https://github.com/foxglove/studio/issues/4657> for more details.
+      // preload: config.scene.transforms?.enablePreloading ?? true,
     });
-    this.addDatatypeSubscriptions(TF_DATATYPES, {
+    this.addSchemaSubscriptions(TF_DATATYPES, {
       handler: this.handleTFMessage,
       forced: true,
-      preload: true,
+      // Disabled until we can efficiently preload transforms
+      // preload: config.scene.transforms?.enablePreloading ?? true,
     });
-    this.addDatatypeSubscriptions(TRANSFORM_STAMPED_DATATYPES, {
+    this.addSchemaSubscriptions(TRANSFORM_STAMPED_DATATYPES, {
       handler: this.handleTransformStamped,
       forced: true,
-      preload: true,
+      // Disabled until we can efficiently preload transforms
+      // preload: config.scene.transforms?.enablePreloading ?? true,
     });
 
     this.addSceneExtension(this.coreSettings);
@@ -451,8 +473,10 @@ export class Renderer extends EventEmitter<RendererEvents> {
     this.addSceneExtension(new Images(this));
     this.addSceneExtension(new Markers(this));
     this.addSceneExtension(new FoxgloveSceneEntities(this));
+    this.addSceneExtension(new FoxgloveGrid(this));
     this.addSceneExtension(new OccupancyGrids(this));
     this.addSceneExtension(new PointCloudsAndLaserScans(this));
+    this.addSceneExtension(new VelodyneScans(this));
     this.addSceneExtension(new Polygons(this));
     this.addSceneExtension(new Poses(this));
     this.addSceneExtension(new PoseArrays(this));
@@ -466,37 +490,51 @@ export class Renderer extends EventEmitter<RendererEvents> {
     this.animationFrame();
   }
 
+  private _onDevicePixelRatioChange = () => {
+    log.debug(`devicePixelRatio changed to ${window.devicePixelRatio}`);
+    this.resizeHandler(this.input.canvasSize);
+    this._watchDevicePixelRatio();
+  };
+
   private _watchDevicePixelRatio() {
-    window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`).addEventListener(
-      "change",
-      () => {
-        log.debug(`devicePixelRatio changed to ${window.devicePixelRatio}`);
-        this.resizeHandler(this.input.canvasSize);
-        this._watchDevicePixelRatio();
-      },
-      { once: true },
+    this._devicePixelRatioMediaQuery = window.matchMedia(
+      `(resolution: ${window.devicePixelRatio}dppx)`,
     );
+    this._devicePixelRatioMediaQuery.addEventListener("change", this._onDevicePixelRatioChange, {
+      once: true,
+    });
   }
 
   public dispose(): void {
     log.warn(`Disposing renderer`);
+    this._devicePixelRatioMediaQuery?.removeEventListener("change", this._onDevicePixelRatioChange);
     this.removeAllListeners();
 
-    this.settings.off("update");
-    this.input.off("resize", this.resizeHandler);
-    this.input.off("click", this.clickHandler);
+    this.settings.removeAllListeners();
+    this.input.removeAllListeners();
+
     this.controls.dispose();
 
     for (const extension of this.sceneExtensions.values()) {
       extension.dispose();
     }
     this.sceneExtensions.clear();
+    this.sharedGeometry.dispose();
 
     this.labelPool.dispose();
     this.markerPool.dispose();
     this.picker.dispose();
     this.input.dispose();
     this.gl.dispose();
+  }
+
+  public cameraSyncError(): undefined | string {
+    return this._cameraSyncError;
+  }
+
+  public setCameraSyncError(error: undefined | string): void {
+    this._cameraSyncError = error;
+    this.updateCoreSettings();
   }
 
   public getPixelRatio(): number {
@@ -508,8 +546,9 @@ export class Renderer extends EventEmitter<RendererEvents> {
    * This is useful when seeking to a new playback position or when a new data source is loaded.
    */
   public clear(): void {
-    // This must be cleared before calling `SceneExtension#removeAllRenderables()` to allow
-    // extensions to add errors back afterward
+    // These must be cleared before calling `SceneExtension#removeAllRenderables()` to allow
+    // extensions to add transforms and errors back afterward
+    this.transformTree.clearAfter(this.currentTime);
     this.settings.errors.clear();
 
     for (const extension of this.sceneExtensions.values()) {
@@ -535,25 +574,25 @@ export class Renderer extends EventEmitter<RendererEvents> {
     this.coreSettings.updateSettingsTree();
   }
 
-  public addDatatypeSubscriptions<T>(
-    datatypes: Iterable<string>,
+  public addSchemaSubscriptions<T>(
+    schemaNames: Iterable<string>,
     subscription: RendererSubscription<T> | MessageHandler<T>,
   ): void {
     const genericSubscription =
       subscription instanceof Function
         ? { handler: subscription as MessageHandler<unknown> }
         : (subscription as RendererSubscription);
-    for (const datatype of datatypes) {
-      let handlers = this.datatypeHandlers.get(datatype);
+    for (const schemaName of schemaNames) {
+      let handlers = this.schemaHandlers.get(schemaName);
       if (!handlers) {
         handlers = [];
-        this.datatypeHandlers.set(datatype, handlers);
+        this.schemaHandlers.set(schemaName, handlers);
       }
       if (!handlers.includes(genericSubscription)) {
         handlers.push(genericSubscription);
       }
     }
-    this.emit("datatypeHandlersChanged", this);
+    this.emit("schemaHandlersChanged", this);
   }
 
   public addTopicSubscription<T>(
@@ -597,6 +636,7 @@ export class Renderer extends EventEmitter<RendererEvents> {
     const topics: SettingsTreeEntry = {
       path: ["topics"],
       node: {
+        enableVisibilityFilter: true,
         label: "Topics",
         defaultExpansionState: "expanded",
         actions: [
@@ -834,7 +874,7 @@ export class Renderer extends EventEmitter<RendererEvents> {
     return this.config.cameraState.perspective ? this.perspectiveCamera : this.orthographicCamera;
   }
 
-  public addMessageEvent(messageEvent: Readonly<MessageEvent<unknown>>, datatype: string): void {
+  public addMessageEvent(messageEvent: Readonly<MessageEvent<unknown>>): void {
     const { message } = messageEvent;
 
     const maybeHasHeader = message as DeepPartial<{ header: Header }>;
@@ -865,7 +905,7 @@ export class Renderer extends EventEmitter<RendererEvents> {
     }
 
     handleMessage(messageEvent, this.topicHandlers.get(messageEvent.topic));
-    handleMessage(messageEvent, this.datatypeHandlers.get(datatype));
+    handleMessage(messageEvent, this.schemaHandlers.get(messageEvent.schemaName));
   }
 
   /** Match the behavior of `tf::Transformer` by stripping leading slashes from
@@ -918,16 +958,43 @@ export class Renderer extends EventEmitter<RendererEvents> {
     stamp: bigint,
     translation: Vector3,
     rotation: Quaternion,
+    errorSettingsPath?: string[],
   ): void {
     const t = translation;
     const q = rotation;
 
     const transform = new Transform([t.x, t.y, t.z], [q.x, q.y, q.z, q.w]);
-    const updated = this.transformTree.addTransform(childFrameId, parentFrameId, stamp, transform);
+    const status = this.transformTree.addTransform(childFrameId, parentFrameId, stamp, transform);
 
-    if (updated) {
+    if (status === AddTransformResult.UPDATED) {
       this.coordinateFrameList = this.transformTree.frameList();
       this.emit("transformTreeUpdated", this);
+    }
+
+    if (status === AddTransformResult.CYCLE_DETECTED) {
+      this.settings.errors.add(
+        ["transforms", `frame:${childFrameId}`],
+        CYCLE_DETECTED,
+        `Transform tree cycle detected: Received transform with parent "${parentFrameId}" and child "${childFrameId}", but "${childFrameId}" is already an ancestor of "${parentFrameId}". Transform message dropped.`,
+      );
+      if (errorSettingsPath) {
+        this.settings.errors.add(
+          errorSettingsPath,
+          CYCLE_DETECTED,
+          `Attempted to add cyclical transform: Frame "${parentFrameId}" cannot be the parent of frame "${childFrameId}". Transform message dropped.`,
+        );
+      }
+    }
+
+    // Check if the transform history for this frame is at capacity and show an error if so. This
+    // error can't be cleared until the scene is reloaded
+    const frame = this.transformTree.getOrCreateFrame(childFrameId);
+    if (frame.transformsSize() === frame.maxCapacity) {
+      this.settings.errors.add(
+        ["transforms", `frame:${childFrameId}`],
+        TF_OVERFLOW,
+        `Transform history is at capacity (${frame.maxCapacity}), TFs will be dropped`,
+      );
     }
   }
 

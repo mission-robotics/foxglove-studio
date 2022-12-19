@@ -43,6 +43,10 @@ const BasicSettings: SettingsTreeNodes = {
     ],
     fields: {
       emptyField: undefined,
+      longField: {
+        input: "string",
+        label: "A field with a very long label that might wrap or truncate",
+      },
       numberWithPrecision: {
         input: "number",
         label: "Number with precision",
@@ -628,6 +632,12 @@ const ColorSettings: SettingsTreeNodes = {
     fields: {
       undefined: { label: "Undefined", input: "rgb", value: undefined, placeholder: "placeholder" },
       invalid: { label: "Invalid", input: "rgb", value: "invalid" },
+      hiddenClearButton: {
+        label: "Hidden Clear Button",
+        input: "rgb",
+        value: "#00ffbf",
+        hideClearButton: true,
+      },
       hex6: { label: "Hex 6", input: "rgb", value: "#ffaa00" },
       hex8: { label: "Hex 8", input: "rgb", value: "#00aaff88" },
       rgb: { label: "RGB", input: "rgb", value: "rgb(255, 128, 0)" },
@@ -822,6 +832,14 @@ Filter.play = () => {
 };
 
 export function Colors(): JSX.Element {
+  return <Wrapper nodes={ColorSettings} />;
+}
+
+export function EmptyValue(): JSX.Element {
+  return <Wrapper nodes={ColorSettings} />;
+}
+
+export function SetHiddenValueToTrue(): JSX.Element {
   return <Wrapper nodes={ColorSettings} />;
 }
 

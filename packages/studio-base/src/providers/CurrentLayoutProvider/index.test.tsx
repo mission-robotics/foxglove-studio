@@ -1,3 +1,4 @@
+/** @jest-environment jsdom */
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/
@@ -13,7 +14,7 @@ import {
   useCurrentLayoutActions,
   useCurrentLayoutSelector,
 } from "@foxglove/studio-base/context/CurrentLayoutContext";
-import { PanelsState } from "@foxglove/studio-base/context/CurrentLayoutContext/actions";
+import { LayoutData } from "@foxglove/studio-base/context/CurrentLayoutContext/actions";
 import LayoutManagerContext from "@foxglove/studio-base/context/LayoutManagerContext";
 import {
   UserProfileStorage,
@@ -23,12 +24,11 @@ import CurrentLayoutProvider from "@foxglove/studio-base/providers/CurrentLayout
 import { ILayoutManager } from "@foxglove/studio-base/services/ILayoutManager";
 import { LayoutID } from "@foxglove/studio-base/services/ILayoutStorage";
 
-const TEST_LAYOUT: PanelsState = {
+const TEST_LAYOUT: LayoutData = {
   layout: "ExamplePanel!1",
   configById: {},
   globalVariables: {},
   userNodes: {},
-  linkedGlobalVariables: [],
   playbackConfig: {
     speed: 0.2,
   },
@@ -112,11 +112,10 @@ function renderTest({
 
 describe("CurrentLayoutProvider", () => {
   it("uses currentLayoutId from UserProfile to load from LayoutStorage", async () => {
-    const expectedState: PanelsState = {
+    const expectedState: LayoutData = {
       layout: "Foo!bar",
       configById: { "Foo!bar": { setting: 1 } },
       globalVariables: { var: "hello" },
-      linkedGlobalVariables: [{ topic: "/test", markerKeyPath: [], name: "var" }],
       userNodes: { node1: { name: "node", sourceCode: "node()" } },
       playbackConfig: { speed: 0.1 },
     };
@@ -149,7 +148,7 @@ describe("CurrentLayoutProvider", () => {
 
   it("saves new layout selection into UserProfile", async () => {
     const mockLayoutManager = makeMockLayoutManager();
-    const newLayout: Partial<PanelsState> = {
+    const newLayout: Partial<LayoutData> = {
       ...TEST_LAYOUT,
       layout: "ExamplePanel!2",
     };

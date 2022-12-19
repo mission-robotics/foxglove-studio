@@ -204,7 +204,7 @@ export type Topic = {
   // a consistent representation for topics that people recognize though.
   name: string;
   // Name of the datatype (see `type PlayerStateActiveData` for details).
-  datatype: string;
+  schemaName: string;
 };
 
 export type TopicStats = {
@@ -226,12 +226,11 @@ type RosTypedArray =
   | Float32Array
   | Float64Array;
 
-type RosSingularField = number | string | boolean | RosObject; // No time -- consider it a message.
+type RosSingularField = number | string | boolean | RosObject | undefined; // No time -- consider it a message.
 export type RosValue =
   | RosSingularField
   | readonly RosSingularField[]
   | RosTypedArray
-  | undefined
   // eslint-disable-next-line no-restricted-syntax
   | null;
 
@@ -269,20 +268,20 @@ export type SubscriptionPreloadType =
 
 // Represents a subscription to a single topic, for use in `setSubscriptions`.
 export type SubscribePayload = {
-  // The topic name to subscribe to.
+  // The topic name to subscribe to
   topic: string;
   preloadType?: SubscriptionPreloadType;
 };
 
 // Represents a single topic publisher, for use in `setPublishers`.
 export type AdvertiseOptions = {
-  // The topic name
+  /** The topic name */
   topic: string;
 
-  // The datatype name
-  datatype: string;
+  /** The schema name */
+  schemaName: string;
 
-  // Additional advertise options
+  /** Additional player-specific advertise options */
   options?: Record<string, unknown>;
 };
 
@@ -315,7 +314,6 @@ export const PlayerCapabilities = {
 export interface PlayerMetricsCollectorInterface {
   setProperty(key: string, value: string | number | boolean): void;
   playerConstructed(): void;
-  initialized(args?: { isSampleDataSource: boolean }): void;
   play(speed: number): void;
   seek(time: Time): void;
   setSpeed(speed: number): void;

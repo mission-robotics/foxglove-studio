@@ -26,7 +26,7 @@ import {
   EndDragPayload,
   MoveTabPayload,
   PanelsActions,
-  PanelsState,
+  LayoutData,
   SaveConfigsPayload,
   SplitPanelPayload,
   StartDragPayload,
@@ -34,7 +34,6 @@ import {
 } from "@foxglove/studio-base/context/CurrentLayoutContext/actions";
 import { useLayoutManager } from "@foxglove/studio-base/context/LayoutManagerContext";
 import { useUserProfileStorage } from "@foxglove/studio-base/context/UserProfileStorageContext";
-import { LinkedGlobalVariables } from "@foxglove/studio-base/panels/ThreeDimensionalViz/Interactions/useLinkedGlobalVariables";
 import { defaultLayout } from "@foxglove/studio-base/providers/CurrentLayoutProvider/defaultLayout";
 import panelsReducer from "@foxglove/studio-base/providers/CurrentLayoutProvider/reducers";
 import { LayoutID } from "@foxglove/studio-base/services/ConsoleApi";
@@ -154,7 +153,7 @@ export default function CurrentLayoutProvider({
     [enqueueSnackbar, isMounted, layoutManager, setLayoutState, setUserProfile],
   );
 
-  type UpdateLayoutParams = { id: LayoutID; data: PanelsState };
+  type UpdateLayoutParams = { id: LayoutID; data: LayoutData };
   const unsavedLayoutsRef = useRef(new Map<LayoutID, UpdateLayoutParams>());
 
   // When the user performs an action, we immediately setLayoutState to update the UI. Saving back
@@ -242,8 +241,8 @@ export default function CurrentLayoutProvider({
       }
 
       if (event.layoutId === layoutStateRef.current.selectedLayout.id) {
-        await setSelectedLayoutId(undefined);
-        enqueueSnackbar("Your active layout was deleted.", { variant: "warning" });
+        const layouts = await layoutManager.getLayouts();
+        await setSelectedLayoutId(layouts[0]?.id);
       }
     };
 
@@ -296,8 +295,6 @@ export default function CurrentLayoutProvider({
         performAction({ type: "SET_GLOBAL_DATA", payload }),
       setUserNodes: (payload: Partial<UserNodes>) =>
         performAction({ type: "SET_USER_NODES", payload }),
-      setLinkedGlobalVariables: (payload: LinkedGlobalVariables) =>
-        performAction({ type: "SET_LINKED_GLOBAL_VARIABLES", payload }),
       setPlaybackConfig: (payload: Partial<PlaybackConfig>) =>
         performAction({ type: "SET_PLAYBACK_CONFIG", payload }),
       closePanel: (payload: ClosePanelPayload) => {

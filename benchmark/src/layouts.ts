@@ -4,8 +4,8 @@
 
 import { Layout, LayoutID, ISO8601Timestamp } from "@foxglove/studio-base";
 
+import DefaultMultipleThreeDee from "./layouts/DefaultMultipleThreeDee.json";
 import Empty from "./layouts/Empty.json";
-import PointcloudMultiple3dLegacy from "./layouts/PointcloudMultiple3dLegacy.json";
 import PointcloudMultipleThreeDee from "./layouts/PointcloudMultipleThreeDee.json";
 import PointcloudRawMessageAnd3d from "./layouts/PointcloudRawMessageAnd3d.json";
 import SinewaveSinglePlot from "./layouts/SinewaveSinglePlot.json";
@@ -27,22 +27,22 @@ function panelStateJsonToLayout(id: string, name: string, state: unknown): Layou
 }
 
 const layouts = [
+  panelStateJsonToLayout(
+    "DefaultMultipleThreeDee",
+    "Default - Multiple 3D",
+    DefaultMultipleThreeDee,
+  ),
   panelStateJsonToLayout("Empty", "Empty", Empty),
   panelStateJsonToLayout("SinewaveSinglePlot", "Sinewave - Single Plot", SinewaveSinglePlot),
   panelStateJsonToLayout(
     "PointcloudRawMessageAnd3d",
-    "Pointcloud - Raw Message and 3d",
+    "Pointcloud - Raw Message and 3D",
     PointcloudRawMessageAnd3d,
   ),
   panelStateJsonToLayout(
     "PointcloudMultipleThreeDee",
-    "Pointcloud - Multiple 3d",
+    "Pointcloud - Multiple 3D",
     PointcloudMultipleThreeDee,
-  ),
-  panelStateJsonToLayout(
-    "PointcloudMultiple3dLegacy",
-    "Pointcloud - Multiple 3d Legacy",
-    PointcloudMultiple3dLegacy,
   ),
 ];
 
