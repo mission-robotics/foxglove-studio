@@ -2,14 +2,12 @@
 
 cat <<EOF >> .yarnrc.yml
 npmScopes:
-  foo:
+  foxglove:
     npmRegistryServer: 'https://gitlab.com/api/v4/projects/${CI_PROJECT_ID}/packages/npm/'
     npmPublishRegistry: 'https://gitlab.com/api/v4/projects/${CI_PROJECT_ID}/packages/npm/'
-
-npmRegistries:
-  //gitlab.com/api/v4/projects/${CI_PROJECT_ID}/packages/npm/:
     npmAlwaysAuth: true
     npmAuthToken: '${CI_JOB_TOKEN}'
+
 EOF
 
 
