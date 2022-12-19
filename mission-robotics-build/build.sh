@@ -1,6 +1,6 @@
 #!/bin/bash
 
-cat <<EOF > .yarnrc.yml
+cat <<EOF >> .yarnrc.yml
 npmScopes:
   foo:
     npmRegistryServer: 'https://gitlab.com/api/v4/projects/${CI_PROJECT_ID}/packages/npm/'
@@ -16,10 +16,10 @@ EOF
 corepack enable
 yarn install
 
-yarn workspace @foxglove/den add @foxglove/tsconfig
-yarn workspace @foxglove/den install
-yarn workspace @foxglove/den pack
-# yarn workspace @foxglove/den npm publish
+# yarn workspace @foxglove/den add @foxglove/tsconfig
+# yarn workspace @foxglove/den install
+# yarn workspace @foxglove/den pack
+yarn workspace @foxglove/den npm publish
 
 # cd packages/den
 # yarn install
