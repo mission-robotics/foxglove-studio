@@ -16,22 +16,6 @@ yarn install
 
 
 yarn workspace @foxglove/den npm publish
-
-cat .yarnrc.yml
-
-# cd packages/den
-# yarn install
-# yarn pack
-# yarn npm publish --
-
-# cd ../hooks
-# yarn pack
-# yarn publish
-
-# cd ../log
-# yarn pack
-# yarn publish
-
-# cd ../studio-base
-# yarn pack
-# yarn publish
+yarn workspace @foxglove/hooks npm publish
+yarn workspace @foxglove/logs npm publish
+yarn workspace @foxglove/studio-base npm publish
