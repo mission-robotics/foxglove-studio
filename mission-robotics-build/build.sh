@@ -16,9 +16,14 @@ EOF
 corepack enable
 yarn install
 
-cd packages/den
-yarn pack
-yarn npm publish
+
+yarn workspace @foxglove/den install
+yarn workspace @foxglove/den npm publish
+
+# cd packages/den
+# yarn install
+# yarn pack
+# yarn npm publish --
 
 # cd ../hooks
 # yarn pack
