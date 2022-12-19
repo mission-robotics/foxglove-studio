@@ -24,7 +24,8 @@ yarn workspace @foxglove/den prepack
 echo "Building packages"
 yarn build:packages
 
-#yarn workspace @foxglove/den npm publish
-#yarn workspace @foxglove/hooks npm publish
-#yarn workspace @foxglove/log npm publish
-#yarn workspace @foxglove/studio-base npm publish
+echo "Publishing"
+yarn workspace @foxglove/den npm publish
+yarn workspace @foxglove/hooks npm publish
+yarn workspace @foxglove/log npm publish
+yarn workspace @foxglove/studio-base npm publish
