@@ -18,16 +18,16 @@ yarn install
 
 cd packages/den
 yarn pack
-yarn publish
+yarn npm publish
 
-cd ../hooks
-yarn pack
-yarn publish
+# cd ../hooks
+# yarn pack
+# yarn publish
 
-cd ../log
-yarn pack
-yarn publish
+# cd ../log
+# yarn pack
+# yarn publish
 
-cd ../studio-base
-yarn pack
-yarn publish
+# cd ../studio-base
+# yarn pack
+# yarn publish

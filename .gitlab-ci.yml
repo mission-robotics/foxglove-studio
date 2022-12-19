@@ -1,5 +1,10 @@
 image: node:19
 
+cache:
+  paths:
+    - node_modules/
+    - .yarn
+
 stages: # List of stages for jobs, and their order of execution
   - build
 
