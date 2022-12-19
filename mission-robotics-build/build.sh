@@ -1,0 +1,33 @@
+#!/bin/bash
+
+cat <<EOF
+npmScopes:
+  foo:
+    npmRegistryServer: 'https://gitlab.com/api/v4/projects/${CI_PROJECT_ID}/packages/npm/'
+    npmPublishRegistry: 'https://gitlab.com/api/v4/projects/${CI_PROJECT_ID}/packages/npm/'
+
+npmRegistries:
+  //gitlab.com/api/v4/projects/${CI_PROJECT_ID}/packages/npm/:
+    npmAlwaysAuth: true
+    npmAuthToken: '${CI_JOB_TOKEN}'
+EOF > .yarnrc.yml
+
+
+corepack enable
+yarn install
+
+cd packages/den
+yarn pack
+yarn publish
+
+cd ../hooks
+yarn pack
+yarn publish
+
+cd ../log
+yarn pack
+yarn publish
+
+cd ../studio-base
+yarn pack
+yarn publish

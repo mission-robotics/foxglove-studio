@@ -1,0 +1,7 @@
+stages: # List of stages for jobs, and their order of execution
+  - build
+
+build-job:
+  stage: build
+  script:
+    - mission-robotics-build/build.sh
