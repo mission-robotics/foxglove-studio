@@ -1,18 +1,18 @@
 #!/bin/bash
 
-#cat <<EOF >> .yarnrc.yml
-#npmScopes:
-#  foxglove:
-#    npmRegistryServer: 'https://gitlab.com/api/v4/projects/${CI_PROJECT_ID}/packages/npm/'
-#    npmPublishRegistry: 'https://gitlab.com/api/v4/projects/${CI_PROJECT_ID}/packages/npm/'
-#    npmAlwaysAuth: true
-#    npmAuthToken: '${CI_JOB_TOKEN}'
-#
-#EOF
+cat <<EOF >> .yarnrc.yml
+npmScopes:
+  foxglove:
+    npmRegistryServer: 'https://gitlab.com/api/v4/projects/${CI_PROJECT_ID}/packages/npm/'
+    npmPublishRegistry: 'https://gitlab.com/api/v4/projects/${CI_PROJECT_ID}/packages/npm/'
+    npmAlwaysAuth: true
+    npmAuthToken: '${CI_JOB_TOKEN}'
+
+EOF
 
 
-#corepack enable
-#yarn install
+corepack enable
+yarn install
 
 echo "Building log"
 yarn workspace @foxglove/log prepack
