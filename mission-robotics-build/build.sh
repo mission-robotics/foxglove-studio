@@ -14,6 +14,7 @@ EOF
 corepack enable
 yarn install
 
+yarn build:packages
 
 yarn workspace @foxglove/den npm publish
 yarn workspace @foxglove/hooks npm publish
