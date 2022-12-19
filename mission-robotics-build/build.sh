@@ -16,10 +16,10 @@ EOF
 corepack enable
 yarn install
 
-# yarn workspace @foxglove/den add @foxglove/tsconfig
-# yarn workspace @foxglove/den install
-# yarn workspace @foxglove/den pack
+
 yarn workspace @foxglove/den npm publish
+
+cat .yarnrc.yml
 
 # cd packages/den
 # yarn install
