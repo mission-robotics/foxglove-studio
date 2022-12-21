@@ -58,9 +58,9 @@ export interface FileReader {
 }
 
 const LOGGING_INTERVAL_IN_BYTES = 1024 * 1024 * 100; // Log every 100MiB to avoid cluttering the logs too much.
-const CACHE_BLOCK_SIZE = 1024 * 1024 * 100; // 100MiB blocks.
+const CACHE_BLOCK_SIZE = 1024 * 1024 * 200; // 100MiB blocks.
 // Don't start a new connection if we're 50MiB away from downloading the requested byte.
-const CLOSE_ENOUGH_BYTES_TO_NOT_START_NEW_CONNECTION = 1024 * 1024 * 50;
+const CLOSE_ENOUGH_BYTES_TO_NOT_START_NEW_CONNECTION = 1024 * 1024 * 195;
 
 const log = Logger.getLogger(__filename);
 
@@ -231,7 +231,7 @@ export default class CachedFilelike implements Filelike {
     }
 
     // Start the stream, and update the current connection state.
-    this._log.info(`Starting connection for range @ ${range.start} - ${range.end - range.start}`);
+    this._log.info(`Starting connection for range @ ${range.start} - ${range.end}`);
 
     const stream = this._fileReader.fetch(range.start, range.end - range.start);
     this._currentConnection = { stream, remainingRange: range };
