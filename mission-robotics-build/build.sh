@@ -1,5 +1,22 @@
 #!/bin/bash
 
+corepack enable
+yarn install # this installs some of the dependency projects from @foxglove
+
+
+
+echo "Building log"
+yarn workspace @foxglove/log prepack
+echo "Building hooks"
+yarn workspace @foxglove/hooks prepack
+echo "Building den"
+yarn workspace @foxglove/den prepack
+
+echo "Building packages"
+yarn build:packages
+
+
+# Add the npmScope config to publish to our own repo
 cat <<EOF >> .yarnrc.yml
 npmScopes:
   foxglove:
@@ -9,23 +26,6 @@ npmScopes:
     npmAuthToken: '${CI_JOB_TOKEN}'
 
 EOF
-
-
-corepack enable
-yarn install
-
-echo "Building log"
-yarn workspace @foxglove/log install
-yarn workspace @foxglove/log prepack
-echo "Building hooks"
-yarn workspace @foxglove/hooks install
-yarn workspace @foxglove/hooks prepack
-echo "Building den"
-yarn workspace @foxglove/den install
-yarn workspace @foxglove/den prepack
-
-echo "Building packages"
-yarn build:packages
 
 echo "Publishing"
 yarn workspace @foxglove/den npm publish
