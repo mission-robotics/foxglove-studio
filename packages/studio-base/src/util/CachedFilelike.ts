@@ -57,10 +57,23 @@ export interface FileReader {
   fetch(offset: number, length: number): FileStream;
 }
 
+const searchParams = new URLSearchParams(window.location.search.replace("?", ""));
+const CACHE_BLOCK_SIZE_DEFAULT = 10;
+const CACHE_BLOCK_SIZE_VALUE = searchParams.has("blockSize")
+  ? parseInt(searchParams.get("blockSize") ?? `${CACHE_BLOCK_SIZE_DEFAULT}`)
+  : CACHE_BLOCK_SIZE_DEFAULT;
+const CLOSE_ENOUGH_BYTES_TO_NOT_START_NEW_CONNECTION_DEFAULT = 5;
+const CLOSE_ENOUGH_BYTES_TO_NOT_START_NEW_CONNECTION_VALUE = searchParams.has("threshold")
+  ? parseInt(
+      searchParams.get("threshold") ?? `${CLOSE_ENOUGH_BYTES_TO_NOT_START_NEW_CONNECTION_DEFAULT}`,
+    )
+  : CLOSE_ENOUGH_BYTES_TO_NOT_START_NEW_CONNECTION_DEFAULT;
+
 const LOGGING_INTERVAL_IN_BYTES = 1024 * 1024 * 100; // Log every 100MiB to avoid cluttering the logs too much.
-const CACHE_BLOCK_SIZE = 1024 * 1024 * 10; // 10MiB blocks.
-// Don't start a new connection if we're 5MiB away from downloading the requested byte.
-const CLOSE_ENOUGH_BYTES_TO_NOT_START_NEW_CONNECTION = 1024 * 1024 * 5;
+const CACHE_BLOCK_SIZE = 1024 * 1024 * CACHE_BLOCK_SIZE_VALUE; // 10MiB blocks.
+// Don't start a new connection if we're 50MiB away from downloading the requested byte.
+const CLOSE_ENOUGH_BYTES_TO_NOT_START_NEW_CONNECTION =
+  1024 * 1024 * CLOSE_ENOUGH_BYTES_TO_NOT_START_NEW_CONNECTION_VALUE;
 
 const log = Logger.getLogger(__filename);
 
