@@ -15,10 +15,13 @@ corepack enable
 yarn install
 
 echo "Building log"
+yarn workspace @foxglove/log install
 yarn workspace @foxglove/log prepack
 echo "Building hooks"
+yarn workspace @foxglove/hooks install
 yarn workspace @foxglove/hooks prepack
 echo "Building den"
+yarn workspace @foxglove/den install
 yarn workspace @foxglove/den prepack
 
 echo "Building packages"
