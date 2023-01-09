@@ -57,23 +57,11 @@ export interface FileReader {
   fetch(offset: number, length: number): FileStream;
 }
 
-const searchParams = new URLSearchParams(window.location.search.replace("?", ""));
-const CACHE_BLOCK_SIZE_DEFAULT = 10;
-const CACHE_BLOCK_SIZE_VALUE = searchParams.has("blockSize")
-  ? parseInt(searchParams.get("blockSize") ?? `${CACHE_BLOCK_SIZE_DEFAULT}`)
-  : CACHE_BLOCK_SIZE_DEFAULT;
-const CLOSE_ENOUGH_BYTES_TO_NOT_START_NEW_CONNECTION_DEFAULT = 5;
-const CLOSE_ENOUGH_BYTES_TO_NOT_START_NEW_CONNECTION_VALUE = searchParams.has("threshold")
-  ? parseInt(
-      searchParams.get("threshold") ?? `${CLOSE_ENOUGH_BYTES_TO_NOT_START_NEW_CONNECTION_DEFAULT}`,
-    )
-  : CLOSE_ENOUGH_BYTES_TO_NOT_START_NEW_CONNECTION_DEFAULT;
-
 const LOGGING_INTERVAL_IN_BYTES = 1024 * 1024 * 100; // Log every 100MiB to avoid cluttering the logs too much.
-const CACHE_BLOCK_SIZE = 1024 * 1024 * CACHE_BLOCK_SIZE_VALUE; // 10MiB blocks.
+// These two values can be overriden via parameters
+const CACHE_BLOCK_SIZE = 1024 * 1024 * 10; // 10MiB blocks.
 // Don't start a new connection if we're 50MiB away from downloading the requested byte.
-const CLOSE_ENOUGH_BYTES_TO_NOT_START_NEW_CONNECTION =
-  1024 * 1024 * CLOSE_ENOUGH_BYTES_TO_NOT_START_NEW_CONNECTION_VALUE;
+const CLOSE_ENOUGH_BYTES_TO_NOT_START_NEW_CONNECTION = 1024 * 1024 * 5;
 
 const log = Logger.getLogger(__filename);
 
@@ -87,6 +75,8 @@ interface ILogger {
 export default class CachedFilelike implements Filelike {
   private _fileReader: FileReader;
   private _cacheSizeInBytes: number = Infinity;
+  private _cacheBlockSizeInBytes: number;
+  private _closeEnoughBytesToNotStartNewConnection: number;
   private _fileSize?: number;
   private _virtualBuffer: VirtualLRUBuffer;
   private _log: ILogger;
@@ -115,15 +105,27 @@ export default class CachedFilelike implements Filelike {
   public constructor(options: {
     fileReader: FileReader;
     cacheSizeInBytes?: number;
+    cacheBlockSizeInBytes?: number;
+    closeEnoughBytesToNotStartNewConnection?: number;
     log?: ILogger;
     // eslint-disable-next-line @foxglove/no-boolean-parameters
     keepReconnectingCallback?: (reconnecting: boolean) => void;
   }) {
     this._fileReader = options.fileReader;
     this._cacheSizeInBytes = options.cacheSizeInBytes ?? this._cacheSizeInBytes;
+    this._cacheBlockSizeInBytes = options.cacheBlockSizeInBytes ?? CACHE_BLOCK_SIZE;
+    this._closeEnoughBytesToNotStartNewConnection =
+      options.closeEnoughBytesToNotStartNewConnection ??
+      CLOSE_ENOUGH_BYTES_TO_NOT_START_NEW_CONNECTION;
     this._keepReconnectingCallback = options.keepReconnectingCallback;
     this._log = options.log ?? log;
     this._virtualBuffer = new VirtualLRUBuffer({ size: 0 });
+
+    this._log.debug(`Cache configuration:`, {
+      cacheSize: this._cacheSizeInBytes,
+      blockSize: this._cacheBlockSizeInBytes,
+      closeEnoughBytesToNotStartNewConnection: this._closeEnoughBytesToNotStartNewConnection,
+    });
   }
 
   public async open(): Promise<void> {
@@ -140,10 +142,10 @@ export default class CachedFilelike implements Filelike {
     } else {
       this._virtualBuffer = new VirtualLRUBuffer({
         size,
-        blockSize: CACHE_BLOCK_SIZE,
+        blockSize: this._cacheBlockSizeInBytes,
         // Rather create too many blocks than too few (Math.ceil), and always add one block,
         // to allow for a read range not starting or ending perfectly at a block boundary.
-        numberOfBlocks: Math.ceil(this._cacheSizeInBytes / CACHE_BLOCK_SIZE) + 2,
+        numberOfBlocks: Math.ceil(this._cacheSizeInBytes / this._cacheBlockSizeInBytes) + 2,
       });
     }
     this._log.info(`Opening file with size ${bytesToMiB(this._fileSize)}MiB`);
@@ -223,7 +225,7 @@ export default class CachedFilelike implements Filelike {
       lastResolvedCallbackEnd: this._lastResolvedCallbackEnd,
       maxRequestSize: this._cacheSizeInBytes,
       fileSize: size,
-      continueDownloadingThreshold: CLOSE_ENOUGH_BYTES_TO_NOT_START_NEW_CONNECTION,
+      continueDownloadingThreshold: this._closeEnoughBytesToNotStartNewConnection,
     });
     if (newConnection) {
       this._setConnection(newConnection);

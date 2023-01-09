@@ -23,7 +23,15 @@ import { RemoteFileReadable } from "./RemoteFileReadable";
 
 const log = Log.getLogger(__filename);
 
-type McapSource = { type: "file"; file: File } | { type: "url"; url: string };
+type McapSource =
+  | { type: "file"; file: File }
+  | {
+      type: "url";
+      url: string;
+      cacheSizeInMBytes?: number;
+      cacheBlockSizeInMBytes?: number;
+      closeEnoughBytesToNotStartNewConnectionInMBytes?: number;
+    };
 
 async function tryCreateIndexedReader(readable: Mcap0Types.IReadable) {
   const decompressHandlers = await loadDecompressHandlers();
@@ -46,6 +54,7 @@ export class McapIterableSource implements IIterableSource {
 
   public constructor(source: McapSource) {
     this._source = source;
+    log.info(`McapIterableSource params`, this._source);
   }
 
   public async initialize(): Promise<Initalization> {
@@ -66,7 +75,12 @@ export class McapIterableSource implements IIterableSource {
         break;
       }
       case "url": {
-        const readable = new RemoteFileReadable(source.url);
+        const readable = new RemoteFileReadable(source.url, {
+          cacheSizeInMBytes: source.cacheSizeInMBytes,
+          cacheBlockSizeInMBytes: source.cacheBlockSizeInMBytes,
+          closeEnoughBytesToNotStartNewConnectionInMBytes:
+            source.closeEnoughBytesToNotStartNewConnectionInMBytes,
+        });
         await readable.open();
         const reader = await tryCreateIndexedReader(readable);
         if (reader) {
@@ -118,7 +132,20 @@ export function initialize(args: IterableSourceInitializeArgs): McapIterableSour
   if (args.file) {
     return new McapIterableSource({ type: "file", file: args.file });
   } else if (args.url) {
-    return new McapIterableSource({ type: "url", url: args.url });
+    return new McapIterableSource({
+      type: "url",
+      url: args.url,
+      cacheSizeInMBytes: args.params?.cacheSizeInMBytes
+        ? parseInt(args.params.cacheSizeInMBytes)
+        : undefined,
+      cacheBlockSizeInMBytes: args.params?.cacheBlockSizeInMBytes
+        ? parseInt(args.params.cacheBlockSizeInMBytes)
+        : undefined,
+      closeEnoughBytesToNotStartNewConnectionInMBytes: args.params
+        ?.closeEnoughBytesToNotStartNewConnectionInMBytes
+        ? parseInt(args.params.closeEnoughBytesToNotStartNewConnectionInMBytes)
+        : undefined,
+    });
   }
 
   throw new Error("file or url required");

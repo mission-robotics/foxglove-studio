@@ -5,20 +5,34 @@
 import BrowserHttpReader from "@foxglove/studio-base/util/BrowserHttpReader";
 import CachedFilelike from "@foxglove/studio-base/util/CachedFilelike";
 
-const searchParams = new URLSearchParams(window.location.search.replace("?", ""));
 const CACHE_SIZE_DEFAULT = 200;
-const CACHE_SIZE_VALUE = searchParams.has("cacheSize")
-  ? parseInt(searchParams.get("cacheSize") ?? `${CACHE_SIZE_DEFAULT}`)
-  : CACHE_SIZE_DEFAULT;
 
 export class RemoteFileReadable {
   private remoteReader: CachedFilelike;
 
-  public constructor(url: string) {
+  public constructor(
+    url: string,
+    cacheConfig: {
+      cacheSizeInMBytes?: number;
+      cacheBlockSizeInMBytes?: number;
+      closeEnoughBytesToNotStartNewConnectionInMBytes?: number;
+    } = { cacheSizeInMBytes: CACHE_SIZE_DEFAULT },
+  ) {
     const fileReader = new BrowserHttpReader(url);
     this.remoteReader = new CachedFilelike({
       fileReader,
-      cacheSizeInBytes: 1024 * 1024 * CACHE_SIZE_VALUE, // 200MiB
+      cacheSizeInBytes:
+        cacheConfig.cacheSizeInMBytes != undefined
+          ? 1024 * 1024 * cacheConfig.cacheSizeInMBytes
+          : 1024 * 1024 * CACHE_SIZE_DEFAULT, // 200MiB default
+      cacheBlockSizeInBytes:
+        cacheConfig.cacheBlockSizeInMBytes != undefined
+          ? 1024 * 1024 * cacheConfig.cacheBlockSizeInMBytes
+          : undefined,
+      closeEnoughBytesToNotStartNewConnection:
+        cacheConfig.closeEnoughBytesToNotStartNewConnectionInMBytes != undefined
+          ? 1024 * 1024 * cacheConfig.closeEnoughBytesToNotStartNewConnectionInMBytes
+          : undefined,
     });
   }
 

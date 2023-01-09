@@ -52,7 +52,7 @@ class RemoteDataSourceFactory implements IDataSourceFactory {
 
     const extension = path.extname(new URL(url).pathname);
     const sourceType = { ".bag": "rosbag", ".mcap": "mcap" }[extension] ?? "";
-    const source = new WorkerIterableSource({ sourceType, initArgs: { url } });
+    const source = new WorkerIterableSource({ sourceType, initArgs: { url, params: args.params } });
 
     return new IterablePlayer({
       source,
