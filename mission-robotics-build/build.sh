@@ -16,6 +16,7 @@ echo "::group::Building packages"
 yarn build:packages
 echo "::endgroup::"
 
+yarn config set npmRegistryServer "https://npm.pkg.github.com"
 yarn config set npmScopes.foxglove.npmRegistryServer "https://npm.pkg.github.com"
 yarn config set npmScopes.foxglove.npmAlwaysAuth true
 yarn config set npmScopes.foxglove.npmAuthToken ${NPM_AUTH_TOKEN}
