@@ -1,8 +1,7 @@
 #!/bin/bash
 
-corepack enable
+yarn set version stable
 yarn install # this installs some of the dependency projects from @foxglove
-
 
 
 echo "Building log"
@@ -15,17 +14,10 @@ yarn workspace @foxglove/den prepack
 echo "Building packages"
 yarn build:packages
 
+yarn config set npmScopes.foxglove.npmRegistryServer "https://npm.pkg.github.com"
+yarn config set npmScopes.foxglove.npmAlwaysAuth true
 
-# Add the npmScope config to publish to our own repo
-cat <<EOF >> .yarnrc.yml
-npmScopes:
-  foxglove:
-    npmRegistryServer: 'https://gitlab.com/api/v4/projects/${CI_PROJECT_ID}/packages/npm/'
-    npmPublishRegistry: 'https://gitlab.com/api/v4/projects/${CI_PROJECT_ID}/packages/npm/'
-    npmAlwaysAuth: true
-    npmAuthToken: '${CI_JOB_TOKEN}'
-
-EOF
+yarn config set npmScopes.foxglove.npmAuthToken ${NPM_AUTH_TOKEN}
 
 echo "Publishing"
 yarn workspace @foxglove/den npm publish
