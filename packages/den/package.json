@@ -14,6 +14,9 @@
   "scripts": {
     "prepack": "tsc -b"
   },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
   "main": "./dist/index.js",
   "files": [
     "./**/*.js",

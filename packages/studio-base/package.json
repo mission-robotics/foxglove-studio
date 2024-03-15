@@ -28,6 +28,9 @@
     "build:tsc": "ttsc --module es2020 --project tsconfig.json",
     "build:webpack": "cross-env TS_NODE_PROJECT=\"tsconfig.cli.json\" webpack --mode production --progress"
   },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
   "devDependencies": {
     "@emotion/cache": "11.10.5",
     "@emotion/react": "11.7.1",
