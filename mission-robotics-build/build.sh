@@ -21,6 +21,8 @@ yarn config set npmScopes.foxglove.npmAlwaysAuth true
 yarn config set npmScopes.foxglove.npmAuthToken ${NPM_AUTH_TOKEN}
 
 echo "Publishing"
+set -e
+yarn config
 yarn workspace @foxglove/den npm publish
 yarn workspace @foxglove/hooks npm publis
 yarn workspace @foxglove/log npm publish
