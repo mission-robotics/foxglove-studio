@@ -2,10 +2,7 @@
   "name": "@foxglove/log",
   "license": "MPL-2.0",
   "version": "1.35.0",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/foxglove/studio.git"
-  },
+  "repository":"https://github.com/mission-robotics/foxglove-studio",
   "author": {
     "name": "Foxglove Technologies",
     "email": "support@foxglove.dev"
