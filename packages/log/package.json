@@ -17,7 +17,7 @@
     "prepack": "tsc -b"
   },
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com"
+    "registry": "https://missionrobotics.jfrog.io/artifactory/api/npm/mr-npm-prod/"
   },
   "devDependencies": {
     "typescript": "4.8.2"

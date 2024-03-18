@@ -26,7 +26,7 @@
     "build:webpack": "cross-env TS_NODE_PROJECT=\"tsconfig.cli.json\" webpack --mode production --progress"
   },
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com"
+    "registry": "https://missionrobotics.jfrog.io/artifactory/api/npm/mr-npm-prod/"
   },
   "devDependencies": {
     "@emotion/cache": "11.10.5",

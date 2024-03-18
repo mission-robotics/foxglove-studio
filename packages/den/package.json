@@ -12,7 +12,7 @@
     "prepack": "tsc -b"
   },
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com"
+    "registry": "https://missionrobotics.jfrog.io/artifactory/api/npm/mr-npm-prod/"
   },
   "main": "./dist/index.js",
   "files": [
