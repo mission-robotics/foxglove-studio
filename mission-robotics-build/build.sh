@@ -26,6 +26,6 @@ yarn npm whoami -s foxglove --publish
 
 echo "Publishing"
 yarn workspace @foxglove/den npm publish
-yarn workspace @foxglove/hooks npm publis
+yarn workspace @foxglove/hooks npm publish
 yarn workspace @foxglove/log npm publish
 yarn workspace @foxglove/studio-base npm publish
