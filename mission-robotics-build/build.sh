@@ -25,7 +25,7 @@ yarn config set npmScopes.foxglove.npmAuthIdent ${JFROG_NPM_TOKEN}
 yarn npm whoami -s foxglove --publish
 
 echo "Publishing"
-yarn workspace @foxglove/den npm publish
-yarn workspace @foxglove/hooks npm publish
-yarn workspace @foxglove/log npm publish
-yarn workspace @foxglove/studio-base npm publish
+yarn workspace @foxglove/den npm publish --tolerate-republish
+yarn workspace @foxglove/hooks npm publish --tolerate-republish
+yarn workspace @foxglove/log npm publish --tolerate-republish
+yarn workspace @foxglove/studio-base npm publish --tolerate-republish
