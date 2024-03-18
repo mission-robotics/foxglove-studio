@@ -16,6 +16,8 @@ echo "::group::Building packages"
 yarn build:packages
 echo "::endgroup::"
 
+set -e
+
 yarn config set npmRegistryServer "https://missionrobotics.jfrog.io/artifactory/api/npm/mr-npm-prod/"
 yarn config set npmScopes.foxglove.npmRegistryServer "https://missionrobotics.jfrog.io/artifactory/api/npm/mr-npm-prod/"
 yarn config set npmScopes.foxglove.npmAlwaysAuth true
