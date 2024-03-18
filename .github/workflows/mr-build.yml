@@ -31,6 +31,6 @@ jobs:
           corepack enable
           corepack prepare yarn@stable --activate
 
-      - name: Build and publush
+      - name: Build and publish
         run: |
           bash mission-robotics-build/build.sh
