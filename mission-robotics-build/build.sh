@@ -21,7 +21,7 @@ set -e
 yarn config set npmRegistryServer "https://missionrobotics.jfrog.io/artifactory/api/npm/mr-npm-prod/"
 yarn config set npmScopes.foxglove.npmRegistryServer "https://missionrobotics.jfrog.io/artifactory/api/npm/mr-npm-prod/"
 yarn config set npmScopes.foxglove.npmAlwaysAuth true
-yarn config set npmScopes.foxglove.npmAuthToken ${JFROG_NPM_TOKEN}
+yarn config set npmScopes.foxglove.npmAuthIdent ${JFROG_NPM_TOKEN}
 
 echo "Publishing"
 set -e
